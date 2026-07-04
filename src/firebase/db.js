@@ -11,8 +11,11 @@ import {
   where 
 } from "firebase/firestore";
 
+// Configurable consensus threshold — raise to 3 when more real reviewers are onboarded
+export const REQUIRED_VOTES_FOR_CONSENSUS = 1;
+
 // Seed Data definition
-const DEFAULT_REVIEWERS = [
+export const DEFAULT_REVIEWERS = [
   { 
     id: "rev_1", 
     name: "Alice (Lead AI Auditor)", 
@@ -349,8 +352,8 @@ export const submitVote = async (disputeId, vote, justification, reviewerAddress
         let status = "pending";
         let resolvedAt = null;
 
-        // If all 3 reviewers have voted, calculate consensus
-        if (updatedVoters.length === 3) {
+        // If enough reviewers have voted, calculate consensus
+        if (updatedVoters.length >= REQUIRED_VOTES_FOR_CONSENSUS) {
           status = "resolved";
           resolvedAt = new Date().toISOString();
           const votesList = Object.values(updatedVotes);
@@ -413,8 +416,8 @@ export const submitVote = async (disputeId, vote, justification, reviewerAddress
   reviewers[revIndex].earnings -= 1.00;
   reviewers[revIndex].votesCount += 1;
 
-  // Check Resolution Condition (All 3 voters participated)
-  if (dispute.voters.length === 3) {
+  // Check Resolution Condition (configurable threshold)
+  if (dispute.voters.length >= REQUIRED_VOTES_FOR_CONSENSUS) {
     dispute.status = "resolved";
     dispute.resolvedAt = new Date().toISOString();
     
@@ -425,7 +428,7 @@ export const submitVote = async (disputeId, vote, justification, reviewerAddress
 
     // Payout / Slashing Logic (x402 protocol rules)
     const creatorStake = dispute.stakeAmount;
-    const totalReviewerStakes = 3.00; // 3 voters * 1 USDC
+    const totalReviewerStakes = dispute.voters.length * 1.00; // voters * 1 USDC
     const pot = creatorStake + totalReviewerStakes;
 
     if (dispute.consensus === "reject") {

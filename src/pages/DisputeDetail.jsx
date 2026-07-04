@@ -19,7 +19,9 @@ import {
   getPersonaDetails, 
   submitVote, 
   truncateAddress, 
-  getArcExplorerUrl 
+  getArcExplorerUrl,
+  DEFAULT_REVIEWERS,
+  REQUIRED_VOTES_FOR_CONSENSUS 
 } from "../firebase/db";
 import CountdownButton from "../components/CountdownButton";
 import WalletGate from "../components/WalletGate";
@@ -91,11 +93,17 @@ export default function DisputeDetail() {
   const userHasVoted = dispute.voters.includes(persona.id);
   const isReviewerPersona = persona.role === "reviewer";
 
-  const reviewersMap = {
-    rev_1: { name: "Alice", avatar: "👩‍💻", specialty: "Security" },
-    rev_2: { name: "Bob", avatar: "👨‍🔬", specialty: "Model Alignment" },
-    rev_3: { name: "Charlie", avatar: "🧙‍♂️", specialty: "Smart Contracts" }
-  };
+  // Build reviewer lookup from actual DEFAULT_REVIEWERS data
+  const reviewersMap = {};
+  DEFAULT_REVIEWERS.forEach(r => {
+    reviewersMap[r.id] = {
+      name: r.address && r.address.startsWith("0x") && !r.address.includes("Deactivated")
+        ? truncateAddress(r.address)
+        : r.name,
+      avatar: r.avatar,
+      specialty: r.specialty
+    };
+  });
 
   return (
     <WalletGate>
@@ -199,7 +207,7 @@ export default function DisputeDetail() {
             <div>
               <span className="text-[#94a3b8] block uppercase text-[10px] font-semibold">Review Status</span>
               <span className="text-white font-mono font-bold text-sm mt-0.5 block">
-                {dispute.voters.length} / 3 Reviewers
+                {dispute.voters.length} / {REQUIRED_VOTES_FOR_CONSENSUS} Reviewers
               </span>
             </div>
             <div>
