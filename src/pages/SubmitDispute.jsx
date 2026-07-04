@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useAccount, useBalance, useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
-import { parseUnits } from "viem";
+import { useAccount, useBalance, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { parseUnits, getAddress } from "viem";
 import { FilePlus, ShieldAlert, Coins, HelpCircle, ExternalLink } from "lucide-react";
 import { getPersonaDetails, createDispute } from "../firebase/db";
 import CountdownButton from "../components/CountdownButton";
@@ -13,9 +13,8 @@ export default function SubmitDispute() {
   const { address, isConnected } = useAccount();
   const { data: balanceData } = useBalance({ address });
   
-  // Real on-chain transaction hook using wagmi v2
-  // We use native transfers (useSendTransaction) since USDC is configured as native token on Arc testnet
-  const { sendTransactionAsync, data: txHash, isPending: isTxSending } = useSendTransaction();
+  // Real on-chain contract write hook using wagmi v2
+  const { writeContractAsync, data: txHash, isPending: isTxSending } = useWriteContract();
   const { isLoading: isTxConfirming, isSuccess: isTxConfirmed, error: confirmError } = useWaitForTransactionReceipt({
     hash: txHash,
   });
@@ -35,8 +34,22 @@ export default function SubmitDispute() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
-  // A real controllable testnet EOA address that will act as the Verdict Escrow Account
-  const VERDICT_ESCROW_ADDRESS = "0x89D22EFdC476f57134371C80e1A686dB156291C7";
+  // Escrow and USDC token contract addresses on Arc testnet (checksummed dynamically)
+  const VERDICT_ESCROW_ADDRESS = getAddress("0x89d22efdc476f57134371c80e1a686db156291c7");
+  const USDC_CONTRACT_ADDRESS = getAddress("0x3600000000000000000000000000000000000000");
+
+  const erc20Abi = [
+    {
+      name: 'transfer',
+      type: 'function',
+      stateMutability: 'nonpayable',
+      inputs: [
+        { name: 'recipient', type: 'address' },
+        { name: 'amount', type: 'uint256' }
+      ],
+      outputs: [{ name: '', type: 'bool' }]
+    }
+  ];
 
   useEffect(() => {
     setPersona(getPersonaDetails(address));
@@ -73,21 +86,26 @@ export default function SubmitDispute() {
     
     setError("");
     setIsProcessing(true);
-    setStatusMessage("Opening wallet to sign USDC escrow stake transfer...");
+    setStatusMessage("Opening wallet to sign USDC contract transfer...");
 
     try {
       const stake = parseFloat(form.stakeAmount);
       
       /* 
-        CODE COMMENT: Real EVM On-chain Stake Transfer Flow on Arc Testnet
-        USDC is configured as the native gas token of Arc Testnet network, meaning
-        that transactions are settled in USDC natively. We perform an EVM native transfer
-        to move the USDC stake to the protocol escrow account (VERDICT_ESCROW_ADDRESS).
-        The full Circle x402 programmable escrow wallet integration remains a next protocol milestone.
+        CODE COMMENT: Real ERC-20 USDC Contract Transfer on Arc Testnet
+        We write to the USDC ERC-20 contract (USDC_CONTRACT_ADDRESS) at 
+        0x3600000000000000000000000000000000000000, calling the transfer 
+        function with the checksummed Verdict Escrow Address and the stake 
+        amount parsed to 6 decimals.
       */
-      await sendTransactionAsync({
-        to: VERDICT_ESCROW_ADDRESS,
-        value: parseUnits(stake.toString(), 6), // Native USDC uses 6 decimals
+      await writeContractAsync({
+        address: USDC_CONTRACT_ADDRESS,
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [
+          VERDICT_ESCROW_ADDRESS,
+          parseUnits(stake.toString(), 6)
+        ]
       });
 
       setStatusMessage("Transaction submitted! Waiting for block confirmation...");
