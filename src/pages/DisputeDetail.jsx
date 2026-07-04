@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAccount } from "wagmi";
+import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { parseUnits, getAddress } from "viem";
 import { 
   ArrowLeft, 
   Clock, 
@@ -26,6 +27,23 @@ import {
 import CountdownButton from "../components/CountdownButton";
 import WalletGate from "../components/WalletGate";
 
+// Protocol treasury address for reviewer nanopayments (checksummed)
+const PROTOCOL_TREASURY = getAddress("0x89d22efdc476f57134371c80e1a686db156291c7");
+const USDC_CONTRACT_ADDRESS = getAddress("0x3600000000000000000000000000000000000000");
+
+const erc20Abi = [
+  {
+    name: 'transfer',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'recipient', type: 'address' },
+      { name: 'amount', type: 'uint256' }
+    ],
+    outputs: [{ name: '', type: 'bool' }]
+  }
+];
+
 export default function DisputeDetail() {
   const { id } = useParams();
   const { address } = useAccount();
@@ -35,6 +53,20 @@ export default function DisputeDetail() {
   const [justification, setJustification] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+
+  // Nanopayment on-chain transaction state
+  const [isVoting, setIsVoting] = useState(false);
+  const [voteStatusMessage, setVoteStatusMessage] = useState("");
+  const [confirmedVoteTxHash, setConfirmedVoteTxHash] = useState(null);
+
+  // Wagmi hooks for the reviewer nanopayment
+  const { writeContractAsync, data: voteTxHash, isPending: isVoteTxSending } = useWriteContract();
+  const { isLoading: isVoteTxConfirming, isSuccess: isVoteTxConfirmed, error: voteConfirmError } = useWaitForTransactionReceipt({
+    hash: voteTxHash,
+  });
+
+  // Pending vote data (saved while waiting for tx confirmation)
+  const [pendingVote, setPendingVote] = useState(null);
 
   const loadDispute = async () => {
     const data = await getDisputeById(id);
@@ -68,16 +100,68 @@ export default function DisputeDetail() {
     }
 
     setError("");
+    setIsVoting(true);
+    setVoteStatusMessage("Opening wallet for $0.01 USDC nanopayment...");
+
     try {
-      await submitVote(dispute.id, voteSelection, justification, address);
-      setSuccess(true);
-      setVoteSelection(null);
-      setJustification("");
-      setTimeout(() => setSuccess(false), 3000);
+      // Step 1: Trigger real on-chain $0.01 USDC nanopayment via ERC-20 transfer
+      await writeContractAsync({
+        address: USDC_CONTRACT_ADDRESS,
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [
+          PROTOCOL_TREASURY,
+          parseUnits("0.01", 6) // $0.01 USDC in 6 decimals
+        ]
+      });
+
+      // Save vote data to finalize after tx confirmation
+      setPendingVote({ vote: voteSelection, justification });
+      setVoteStatusMessage("Nanopayment submitted! Waiting for block confirmation...");
     } catch (e) {
-      setError(e.message || "Failed to submit vote.");
+      console.error("Reviewer nanopayment failed", e);
+      setError(e.message || "Nanopayment signature rejected or failed.");
+      setIsVoting(false);
+      setVoteStatusMessage("");
     }
   };
+
+  // Step 2: After nanopayment confirms on-chain, record the vote in the database
+  useEffect(() => {
+    if (isVoteTxConfirmed && voteTxHash && pendingVote && isVoting) {
+      const finalizeVote = async () => {
+        try {
+          setVoteStatusMessage("Payment confirmed! Recording vote on-chain...");
+          await submitVote(dispute.id, pendingVote.vote, pendingVote.justification, address);
+          
+          setConfirmedVoteTxHash(voteTxHash);
+          setSuccess(true);
+          setVoteSelection(null);
+          setJustification("");
+          setPendingVote(null);
+          setIsVoting(false);
+          setVoteStatusMessage("");
+          setTimeout(() => setSuccess(false), 8000);
+        } catch (e) {
+          setError(e.message || "Failed to record vote.");
+          setIsVoting(false);
+          setVoteStatusMessage("");
+          setPendingVote(null);
+        }
+      };
+      finalizeVote();
+    }
+  }, [isVoteTxConfirmed, voteTxHash, pendingVote, isVoting]);
+
+  // Handle nanopayment confirmation errors
+  useEffect(() => {
+    if (voteConfirmError && isVoting) {
+      setError(voteConfirmError.message || "Nanopayment confirmation failed.");
+      setIsVoting(false);
+      setVoteStatusMessage("");
+      setPendingVote(null);
+    }
+  }, [voteConfirmError, isVoting]);
 
 
   if (!dispute) {
@@ -419,71 +503,107 @@ export default function DisputeDetail() {
                 <div className="space-y-6 font-body">
                   <div className="bg-white/[0.02] border border-white/[0.07] p-3 rounded-lg flex items-center gap-2 text-xs">
                     <Coins className="h-4 w-4 text-[#4F6EF7]" />
-                    <span className="text-[#94a3b8]">Staking: <strong className="text-white">1.00 USDC</strong> required</span>
+                    <span className="text-[#94a3b8]">Nanopayment: <strong className="text-white">$0.01 USDC</strong> per vote (on-chain)</span>
                   </div>
 
-                  <div className="space-y-2">
-                    <span className="block text-xs font-bold text-[#94a3b8] uppercase tracking-wider">Cast Verdict</span>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        onClick={() => setVoteSelection("approve")}
-                        className={`py-2 px-3 border rounded-lg flex items-center justify-center gap-2 font-headline text-xs font-semibold uppercase tracking-wider transition-colors duration-200 cursor-pointer ${
-                          voteSelection === "approve" 
-                            ? "bg-[#00D48B]/10 border-[#00D48B] text-[#00D48B]" 
-                            : "bg-white/[0.02] border-white/[0.07] text-[#94a3b8] hover:text-white"
-                        }`}
-                      >
-                        <ThumbsUp className="h-4 w-4" />
-                        Approve Agent
-                      </button>
-                      <button
-                        onClick={() => setVoteSelection("reject")}
-                        className={`py-2 px-3 border rounded-lg flex items-center justify-center gap-2 font-headline text-xs font-semibold uppercase tracking-wider transition-colors duration-200 cursor-pointer ${
-                          voteSelection === "reject" 
-                            ? "bg-[#F7476E]/10 border-[#F7476E] text-[#F7476E]" 
-                            : "bg-white/[0.02] border-white/[0.07] text-[#94a3b8] hover:text-white"
-                        }`}
-                      >
-                        <ThumbsDown className="h-4 w-4" />
-                        Reject Agent
-                      </button>
+                  {/* Nanopayment in progress overlay */}
+                  {isVoting && (
+                    <div className="bg-[#4F6EF7]/5 border border-[#4F6EF7]/20 rounded-lg p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Scale className="h-4 w-4 text-[#4F6EF7] animate-spin" />
+                        <span className="text-xs text-white font-semibold">{voteStatusMessage}</span>
+                      </div>
+                      {voteTxHash && (
+                        <a
+                          href={getArcExplorerUrl(voteTxHash)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] font-mono text-[#4F6EF7] hover:underline flex items-center gap-1 break-all"
+                        >
+                          Tx: {voteTxHash}
+                          <ExternalLink className="h-3 w-3 shrink-0" />
+                        </a>
+                      )}
                     </div>
-                  </div>
+                  )}
 
-                  <div>
-                    <label htmlFor="vote-justification-textarea" className="block text-xs font-bold text-[#94a3b8] uppercase tracking-wider mb-2">
-                      Review Justification
-                    </label>
-                    <textarea
-                      id="vote-justification-textarea"
-                      rows="4"
-                      value={justification}
-                      onChange={(e) => setJustification(e.target.value)}
-                      placeholder="Provide professional technical reasoning for your vote (min. 10 chars)..."
-                      className="w-full bg-white/[0.02] border border-white/[0.07] rounded-lg px-3 py-2 text-xs text-white placeholder-gray-600 focus:border-[#4F6EF7]"
+                  <fieldset disabled={isVoting} className="space-y-6">
+                    <div className="space-y-2">
+                      <span className="block text-xs font-bold text-[#94a3b8] uppercase tracking-wider">Cast Verdict</span>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          onClick={() => setVoteSelection("approve")}
+                          className={`py-2 px-3 border rounded-lg flex items-center justify-center gap-2 font-headline text-xs font-semibold uppercase tracking-wider transition-colors duration-200 cursor-pointer ${
+                            voteSelection === "approve" 
+                              ? "bg-[#00D48B]/10 border-[#00D48B] text-[#00D48B]" 
+                              : "bg-white/[0.02] border-white/[0.07] text-[#94a3b8] hover:text-white"
+                          }`}
+                        >
+                          <ThumbsUp className="h-4 w-4" />
+                          Approve Agent
+                        </button>
+                        <button
+                          onClick={() => setVoteSelection("reject")}
+                          className={`py-2 px-3 border rounded-lg flex items-center justify-center gap-2 font-headline text-xs font-semibold uppercase tracking-wider transition-colors duration-200 cursor-pointer ${
+                            voteSelection === "reject" 
+                              ? "bg-[#F7476E]/10 border-[#F7476E] text-[#F7476E]" 
+                              : "bg-white/[0.02] border-white/[0.07] text-[#94a3b8] hover:text-white"
+                          }`}
+                        >
+                          <ThumbsDown className="h-4 w-4" />
+                          Reject Agent
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label htmlFor="vote-justification-textarea" className="block text-xs font-bold text-[#94a3b8] uppercase tracking-wider mb-2">
+                        Review Justification
+                      </label>
+                      <textarea
+                        id="vote-justification-textarea"
+                        rows="4"
+                        value={justification}
+                        onChange={(e) => setJustification(e.target.value)}
+                        placeholder="Provide professional technical reasoning for your vote (min. 10 chars)..."
+                        className="w-full bg-white/[0.02] border border-white/[0.07] rounded-lg px-3 py-2 text-xs text-white placeholder-gray-600 focus:border-[#4F6EF7]"
+                      />
+                    </div>
+
+                    {error && (
+                      <div className="text-[#F7476E] text-[11px] font-semibold bg-[#F7476E]/10 border border-[#F7476E]/20 p-2.5 rounded-lg">
+                        {error}
+                      </div>
+                    )}
+
+                    {success && (
+                      <div className="bg-[#00D48B]/10 border border-[#00D48B]/20 p-3 rounded-lg space-y-2">
+                        <div className="text-[#00D48B] text-[11px] font-semibold">
+                          ✅ Vote registered with verified nanopayment!
+                        </div>
+                        {confirmedVoteTxHash && (
+                          <a
+                            href={getArcExplorerUrl(confirmedVoteTxHash)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] font-mono text-[#4F6EF7] hover:underline flex items-center gap-1 break-all"
+                          >
+                            Nanopayment Tx: {confirmedVoteTxHash}
+                            <ExternalLink className="h-3 w-3 shrink-0" />
+                          </a>
+                        )}
+                      </div>
+                    )}
+
+                    <CountdownButton
+                      onComplete={handleVoteSubmit}
+                      disabled={!voteSelection || justification.trim().length < 10 || isVoting}
+                      label={voteSelection === "approve" ? "Hold to Cast Approve Vote" : voteSelection === "reject" ? "Hold to Cast Reject Vote" : "Hold to Cast Vote"}
+                      activeLabel="Signing Nanopayment..."
+                      completedLabel="Vote Cast!"
+                      colorClass={voteSelection === "approve" ? "bg-[#00D48B]" : voteSelection === "reject" ? "bg-[#F7476E]" : "bg-[#4F6EF7]"}
                     />
-                  </div>
-
-                  {error && (
-                    <div className="text-[#F7476E] text-[11px] font-semibold bg-[#F7476E]/10 border border-[#F7476E]/20 p-2.5 rounded-lg">
-                      {error}
-                    </div>
-                  )}
-
-                  {success && (
-                    <div className="text-[#00D48B] text-[11px] font-semibold bg-[#00D48B]/10 border border-[#00D48B]/20 p-2.5 rounded-lg">
-                      Vote registered on Arc blockchain!
-                    </div>
-                  )}
-
-                  <CountdownButton
-                    onComplete={handleVoteSubmit}
-                    disabled={!voteSelection || justification.trim().length < 10}
-                    label={voteSelection === "approve" ? "Hold to Cast Approve Vote" : voteSelection === "reject" ? "Hold to Cast Reject Vote" : "Hold to Cast Vote"}
-                    activeLabel="Signing Staked Vote..."
-                    completedLabel="Vote Cast!"
-                    colorClass={voteSelection === "approve" ? "bg-[#00D48B]" : voteSelection === "reject" ? "bg-[#F7476E]" : "bg-[#4F6EF7]"}
-                  />
+                  </fieldset>
                 </div>
               )}
             </div>
