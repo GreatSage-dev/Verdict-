@@ -18,7 +18,7 @@ export default function SubmitDispute() {
     agentOutput: "",
     expectedOutput: "",
     violationType: "Security/PII Leak",
-    stakeAmount: "100"
+    stakeAmount: "10"
   });
   const [error, setError] = useState("");
 
@@ -38,7 +38,7 @@ export default function SubmitDispute() {
     if (!form.expectedOutput.trim()) return "Expected Behavior is required.";
     
     const stake = parseFloat(form.stakeAmount);
-    if (isNaN(stake) || stake < 50) return "Minimum stake amount is 50 USDC.";
+    if (isNaN(stake) || stake < 5) return "Minimum stake amount is 5 USDC.";
     if (stake > persona.balance) return `Insufficient USDC balance. You need ${stake} USDC, but currently have ${persona.balance.toFixed(2)} USDC.`;
     
     return "";
@@ -220,7 +220,7 @@ export default function SubmitDispute() {
                 <div className="relative group">
                   <HelpCircle className="h-3.5 w-3.5 text-[#94a3b8] hover:text-white cursor-pointer" />
                   <div className="absolute left-6 bottom-0 hidden group-hover:block bg-[#0d0f1a] border border-white/[0.07] p-3 rounded-lg text-[10px] w-56 leading-normal z-20 text-[#94a3b8]">
-                    Minimum stake is 50 USDC. Higher stakes can attract senior reviewers faster. Stakes are fully returned if consensus favors your claim.
+                    Minimum stake is 5 USDC. Higher stakes can attract senior reviewers faster. Stakes are fully returned if consensus favors your claim.
                   </div>
                 </div>
               </label>
@@ -229,8 +229,8 @@ export default function SubmitDispute() {
                   id="stake-amount-input"
                   type="number"
                   name="stakeAmount"
-                  min="50"
-                  step="5"
+                  min="5"
+                  step="1"
                   value={form.stakeAmount}
                   onChange={handleChange}
                   className="w-full bg-white/[0.02] border border-white/[0.07] rounded-lg py-2.5 pl-4 pr-16 text-white font-mono"
