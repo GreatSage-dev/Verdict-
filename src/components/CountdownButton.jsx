@@ -61,7 +61,7 @@ export default function CountdownButton({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [progress]);
+  }, []);
 
   // Reset completion state if labels or disabled changes
   useEffect(() => {
