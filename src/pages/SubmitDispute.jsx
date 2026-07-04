@@ -27,7 +27,9 @@ export default function SubmitDispute() {
     agentOutput: "",
     expectedOutput: "",
     violationType: "Security/PII Leak",
-    stakeAmount: "10"
+    stakeAmount: "10",
+    evidence: "",
+    evidenceType: "url"
   });
   
   const [error, setError] = useState("");
@@ -60,11 +62,32 @@ export default function SubmitDispute() {
     setForm(prev => ({ ...prev, [name]: value }));
   };
 
+  const handleEvidenceTypeChange = (type) => {
+    setForm(prev => ({ ...prev, evidenceType: type, evidence: "" }));
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        setError("Image size must be less than 2MB.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setForm(prev => ({ ...prev, evidence: reader.result }));
+        setError("");
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const validateForm = () => {
     if (!form.title.trim()) return "Case Title is required.";
     if (!form.prompt.trim()) return "Agent Prompt input is required.";
     if (!form.agentOutput.trim()) return "Generated Agent Output is required.";
     if (!form.expectedOutput.trim()) return "Expected Behavior is required.";
+    if (!form.evidence.trim()) return "Evidence link or screenshot file is required.";
     
     const stake = parseFloat(form.stakeAmount);
     if (isNaN(stake) || stake < 5) return "Minimum stake amount is 5 USDC.";
@@ -131,7 +154,8 @@ export default function SubmitDispute() {
             form.violationType,
             form.stakeAmount,
             address,
-            txHash // Real verified transaction hash from useWaitForTransactionReceipt
+            txHash, // Real verified transaction hash from useWaitForTransactionReceipt
+            form.evidence // Verified evidence link or base64 image string
           );
           
           window.dispatchEvent(new Event("verdictDbUpdated"));
@@ -287,6 +311,70 @@ export default function SubmitDispute() {
                   placeholder="Describe what the agent should have outputs per rules..."
                   className="w-full bg-white/[0.02] border border-white/[0.07] rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:border-[#4F6EF7]"
                 />
+              </div>
+
+              {/* Evidence Link or Screenshot */}
+              <div>
+                <label className="block text-xs font-bold text-[#94a3b8] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  Evidence of Interaction (URL or Screenshot)
+                  <span className="text-red-500 font-bold">*</span>
+                </label>
+                
+                {/* Evidence Type Tabs */}
+                <div className="flex gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => handleEvidenceTypeChange("url")}
+                    className={`px-3 py-1.5 rounded text-xs font-body font-bold transition-all duration-200 cursor-pointer ${
+                      form.evidenceType === "url"
+                        ? "bg-[#4F6EF7]/20 border border-[#4F6EF7] text-white"
+                        : "bg-white/[0.02] border border-white/[0.07] text-[#94a3b8] hover:text-white"
+                    }`}
+                  >
+                    Paste Shared Chat Link
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleEvidenceTypeChange("file")}
+                    className={`px-3 py-1.5 rounded text-xs font-body font-bold transition-all duration-200 cursor-pointer ${
+                      form.evidenceType === "file"
+                        ? "bg-[#4F6EF7]/20 border border-[#4F6EF7] text-white"
+                        : "bg-white/[0.02] border border-white/[0.07] text-[#94a3b8] hover:text-white"
+                    }`}
+                  >
+                    Upload Screenshot Image
+                  </button>
+                </div>
+
+                {form.evidenceType === "url" ? (
+                  <input
+                    type="url"
+                    name="evidence"
+                    value={form.evidence}
+                    onChange={handleChange}
+                    placeholder="e.g. https://chatgpt.com/share/672bd58..."
+                    className="w-full bg-white/[0.02] border border-white/[0.07] rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:border-[#4F6EF7] font-mono text-xs"
+                  />
+                ) : (
+                  <div className="space-y-3">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      className="w-full text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-[#4F6EF7]/20 file:text-white file:cursor-pointer"
+                    />
+                    {form.evidence && (
+                      <div className="border border-white/[0.07] rounded-lg p-2 max-w-xs relative bg-black/20">
+                        <span className="text-[9px] uppercase tracking-wider text-[#00D48B] block font-semibold mb-1">Preview uploaded image:</span>
+                        <img
+                          src={form.evidence}
+                          alt="Evidence preview"
+                          className="rounded max-h-40 object-contain w-full"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>

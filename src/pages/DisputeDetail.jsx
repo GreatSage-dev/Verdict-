@@ -248,6 +248,56 @@ export default function DisputeDetail() {
               <code>{dispute.agentOutput}</code>
             </pre>
           </div>
+
+          {/* Evidence Verification */}
+          {dispute.evidence && (
+            <div className="lg:col-span-2 bg-white/[0.04] backdrop-blur-md border border-white/[0.07] rounded-[14px] p-6 space-y-4">
+              <h3 className="font-headline font-bold text-xs text-white uppercase tracking-wider border-b border-white/[0.07] pb-2 flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 text-[#4F6EF7]" />
+                Evidence of Interaction
+              </h3>
+              
+              {dispute.evidence.startsWith("data:image/") ? (
+                <div className="space-y-3">
+                  <span className="text-xs text-[#94a3b8] font-body block">
+                    The dispute creator uploaded the following screenshot as verified proof:
+                  </span>
+                  <div className="border border-white/[0.07] rounded-lg p-3 bg-black/30 flex justify-center overflow-hidden">
+                    <img
+                      src={dispute.evidence}
+                      alt="Verified Dispute Evidence"
+                      className="rounded max-h-[500px] object-contain w-auto hover:scale-[1.02] transition-transform duration-300"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white/[0.02] border border-white/[0.07] rounded-lg p-5 flex items-center justify-between gap-4 font-body">
+                  <div className="space-y-1">
+                    <span className="text-xs text-[#94a3b8] block">
+                      The dispute creator provided a shared interaction link as proof:
+                    </span>
+                    <a
+                      href={dispute.evidence}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-mono text-primary hover:underline break-all block"
+                    >
+                      {dispute.evidence}
+                    </a>
+                  </div>
+                  <a
+                    href={dispute.evidence}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 bg-[#4F6EF7]/20 hover:bg-[#4F6EF7]/30 border border-[#4F6EF7] text-white px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors duration-200"
+                  >
+                    <span>View Shared Chat</span>
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         {/* Reviewer Panels (Justifications) */}

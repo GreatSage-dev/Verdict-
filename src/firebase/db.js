@@ -254,7 +254,7 @@ export const getDisputeById = async (id) => {
   return disputes.find(d => d.id === id);
 };
 
-export const createDispute = async (title, prompt, agentOutput, expectedOutput, violationType, stakeAmount, userAddress, realTxHash = null) => {
+export const createDispute = async (title, prompt, agentOutput, expectedOutput, violationType, stakeAmount, userAddress, realTxHash = null, evidence = "") => {
   const txHash = realTxHash || ("0x" + Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join(""));
   const newDispute = {
     title,
@@ -271,7 +271,8 @@ export const createDispute = async (title, prompt, agentOutput, expectedOutput, 
     justifications: {},
     consensus: null,
     resolvedAt: null,
-    txHash
+    txHash,
+    evidence
   };
 
   if (isFirebaseConfigured) {
