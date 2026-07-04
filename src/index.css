@@ -43,6 +43,10 @@
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
   html, body {
     background-color: #0d0f1a !important;
     color: #ffffff !important;
@@ -52,6 +56,11 @@
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Sora', sans-serif;
     color: #ffffff;
+  }
+
+  /* Global smooth transition for all interactive components and hover states */
+  a, button, input, select, textarea, [role="button"] {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
 }
 
@@ -89,4 +98,40 @@ input:focus, textarea:focus, select:focus {
   50% {
     border-color: var(--color-border-dark);
   }
+}
+
+@keyframes rockBeam {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(5deg);
+  }
+  75% {
+    transform: rotate(-5deg);
+  }
+}
+
+@keyframes counterRock {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-5deg);
+  }
+  75% {
+    transform: rotate(5deg);
+  }
+}
+
+@utility animate-rock-beam {
+  animation: rockBeam 8s infinite ease-in-out;
+  transform-origin: center;
+  will-change: transform;
+}
+
+@utility animate-counter-rock {
+  animation: counterRock 8s infinite ease-in-out;
+  transform-origin: top center;
+  will-change: transform;
 }

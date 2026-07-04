@@ -63,23 +63,6 @@ export default function LandingPage() {
     return () => clearTimeout(timer);
   }, [displayedText, isDeleting, wordIndex]);
 
-  // Scale physics animation state
-  const [rockAngle, setRockAngle] = useState(0);
-
-  // Rocking loop
-  useEffect(() => {
-    let animFrame;
-    const start = Date.now();
-    const tick = () => {
-      const elapsed = Date.now() - start;
-      const angle = Math.sin((elapsed / 4000) * Math.PI * 2) * 5; // rocks between -5deg and 5deg
-      setRockAngle(angle);
-      animFrame = requestAnimationFrame(tick);
-    };
-    animFrame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(animFrame);
-  }, []);
-
   const loadDashboardData = async (userAddress) => {
     const disputes = await getDisputes();
     const open = disputes.filter(d => d.status === "pending").length;
@@ -209,18 +192,17 @@ export default function LandingPage() {
             <div className="absolute w-20 h-1.5 bg-white/[0.15] bottom-16 rounded-full" />
             <div className="absolute w-28 h-1 bg-white/[0.08] bottom-14 rounded-full" />
 
-            {/* Beam Pivot element for rocking */}
+             {/* Beam Pivot element for rocking */}
             <div 
-              className="absolute w-[160px] h-1 top-14 bg-white/[0.25] rounded-full"
+              className="absolute w-[160px] h-1 top-14 bg-white/[0.25] rounded-full animate-rock-beam"
               style={{ 
-                transform: `rotate(${rockAngle}deg)`, 
                 transformStyle: "preserve-3d"
               }}
             >
               {/* Left Pan Attachment Point */}
               <div className="absolute left-0 -top-1 w-2.5 h-2.5 bg-[#00D48B] rounded-full">
                 {/* Counter-rotation for strings & cards */}
-                <div style={{ transform: `rotate(${-rockAngle}deg)` }}>
+                <div className="animate-counter-rock">
                   {/* Left hanger strings */}
                   <svg className="absolute top-2 -left-5 w-12 h-16 pointer-events-none" viewBox="0 0 40 50" fill="none">
                     <line x1="20" y1="0" x2="2" y2="44" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
@@ -276,7 +258,7 @@ export default function LandingPage() {
               {/* Right Pan Attachment Point */}
               <div className="absolute right-0 -top-1 w-2.5 h-2.5 bg-[#F7476E] rounded-full">
                 {/* Counter-rotation */}
-                <div style={{ transform: `rotate(${-rockAngle}deg)` }}>
+                <div className="animate-counter-rock">
                   {/* Right hanger strings */}
                   <svg className="absolute top-2 -left-5 w-12 h-16 pointer-events-none" viewBox="0 0 40 50" fill="none">
                     <line x1="20" y1="0" x2="2" y2="44" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />

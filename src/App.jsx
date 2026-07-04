@@ -29,12 +29,18 @@ function App() {
   return (
     <Router>
       <div className="min-h-screen bg-[#0d0f1a] dark:bg-base flex flex-col md:flex-row text-textMain transition-all duration-250 relative">
-        {/* Ambient Glow Blobs */}
-        <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        {/* Ambient Glow Blobs - GPU Composite Optimized */}
+        <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden" style={{ transform: "translate3d(0, 0, 0)" }}>
           {/* Deep blue blob, bottom-left corner */}
-          <div className="absolute -bottom-40 -left-40 w-[550px] h-[550px] bg-[#1a3a8f] opacity-12 rounded-full filter blur-[140px]" />
+          <div 
+            className="absolute -bottom-40 -left-40 w-[550px] h-[550px] bg-[#1a3a8f] opacity-12 rounded-full filter blur-[140px]" 
+            style={{ transform: "translate3d(0, 0, 0)", willChange: "transform" }}
+          />
           {/* Purple blob, top-right corner */}
-          <div className="absolute -top-40 -right-40 w-[550px] h-[550px] bg-[#6b21a8] opacity-8 rounded-full filter blur-[140px]" />
+          <div 
+            className="absolute -top-40 -right-40 w-[550px] h-[550px] bg-[#6b21a8] opacity-8 rounded-full filter blur-[140px]" 
+            style={{ transform: "translate3d(0, 0, 0)", willChange: "transform" }}
+          />
         </div>
 
         <div className="relative z-10 flex flex-col md:flex-row w-full min-h-screen">
