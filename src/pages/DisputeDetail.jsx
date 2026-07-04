@@ -399,12 +399,10 @@ export default function DisputeDetail() {
                       💡 Testing Expert Reviews:
                     </p>
                     <p className="text-[10px] text-[#94a3b8] leading-relaxed">
-                      To vote, connect your browser wallet with one of the pre-seeded reviewer addresses:
+                      To vote, connect your browser wallet with the authorized reviewer address:
                     </p>
                     <ul className="text-[10px] text-[#94a3b8] font-mono space-y-1 mt-1 pl-2 list-disc">
-                      <li>Alice: 0xAlice3F221c97a216D8e60b297B34c4C6746E98bB</li>
-                      <li>Bob: 0xBob87A119d854C216C6E25b597401aB77F98b22aC</li>
-                      <li>Charlie: 0xCharlie5c97A23C27E4B65B597C01cB9f323aC8B991F</li>
+                      <li>Reviewer: 0x75cc548C8C0470309754d8bB9e5F1E048C639AcB</li>
                     </ul>
                   </div>
                 </div>

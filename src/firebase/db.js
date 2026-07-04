@@ -16,7 +16,7 @@ const DEFAULT_REVIEWERS = [
   { 
     id: "rev_1", 
     name: "Alice (Lead AI Auditor)", 
-    address: "0xAlice3F221c97a216D8e60b297B34c4C6746E98bB", 
+    address: "0x75cc548C8C0470309754d8bB9e5F1E048C639AcB", 
     avatar: "👩‍💻", 
     specialty: "Security & PII Leaks", 
     earnings: 340.50, 
@@ -25,7 +25,7 @@ const DEFAULT_REVIEWERS = [
   { 
     id: "rev_2", 
     name: "Bob (NLP Research Scientist)", 
-    address: "0xBob87A119d854C216C6E25b597401aB77F98b22aC", 
+    address: "0xBobDeactivated00000000000000000000000000", 
     avatar: "👨‍🔬", 
     specialty: "Model Alignment", 
     earnings: 210.00, 
@@ -34,7 +34,7 @@ const DEFAULT_REVIEWERS = [
   { 
     id: "rev_3", 
     name: "Charlie (Smart Contract Specialist)", 
-    address: "0xCharlie5c97A23C27E4B65B597C01cB9f323aC8B991F", 
+    address: "0xCharlieDeactivated00000000000000000000", 
     avatar: "🧙‍♂️", 
     specialty: "Blockchain Integrations", 
     earnings: 450.00, 
@@ -192,9 +192,9 @@ export const getPersonaDetails = (address) => {
     };
   }
   const addrLower = address.toLowerCase();
-  const isReviewer1 = addrLower === "0xAlice3F221c97a216D8e60b297B34c4C6746E98bB".toLowerCase();
-  const isReviewer2 = addrLower === "0xBob87A119d854C216C6E25b597401aB77F98b22aC".toLowerCase();
-  const isReviewer3 = addrLower === "0xCharlie5c97A23C27E4B65B597C01cB9f323aC8B991F".toLowerCase();
+  const isReviewer1 = addrLower === "0x75cc548C8C0470309754d8bB9e5F1E048C639AcB".toLowerCase();
+  const isReviewer2 = false;
+  const isReviewer3 = false;
 
   if (isReviewer1) {
     const reviewers = getMockItem("verdict_reviewers") || DEFAULT_REVIEWERS;

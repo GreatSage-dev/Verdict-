@@ -32,9 +32,9 @@ export default function Navbar() {
   ];
 
   // Map known expert reviewer addresses or default to submitter role
-  const isReviewer1 = address && address.toLowerCase() === "0xAlice3F221c97a216D8e60b297B34c4C6746E98bB".toLowerCase();
-  const isReviewer2 = address && address.toLowerCase() === "0xBob87A119d854C216C6E25b597401aB77F98b22aC".toLowerCase();
-  const isReviewer3 = address && address.toLowerCase() === "0xCharlie5c97A23C27E4B65B597C01cB9f323aC8B991F".toLowerCase();
+  const isReviewer1 = address && address.toLowerCase() === "0x75cc548C8C0470309754d8bB9e5F1E048C639AcB".toLowerCase();
+  const isReviewer2 = false;
+  const isReviewer3 = false;
 
   let name = "Not Connected";
   let role = "Please connect wallet";
