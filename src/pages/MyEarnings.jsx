@@ -39,7 +39,7 @@ export default function MyEarnings() {
       let rewardAmount = 0;
 
       if (!isResolved) {
-        activeStakes += 50.00;
+        activeStakes += 1.00;
       } else {
         finishedVotes++;
         const won = d.consensus === myVote;
@@ -52,17 +52,17 @@ export default function MyEarnings() {
           
           if (d.consensus === "reject") {
             const winningReviewersCount = votesVal.filter(v => v === "reject").length;
-            const reviewerBonus = losingCount > 0 ? (losingCount * 30.00) / winningReviewersCount : 0;
+            const reviewerBonus = losingCount > 0 ? (losingCount * 0.60) / winningReviewersCount : 0;
             rewardAmount = reviewerBonus;
           } else {
             const creatorStake = d.stakeAmount;
             const winningReviewersCount = votesVal.filter(v => v === "approve").length;
-            const reviewerReward = (creatorStake + (losingCount * 50.00)) / winningReviewersCount;
+            const reviewerReward = (creatorStake + (losingCount * 1.00)) / winningReviewersCount;
             rewardAmount = reviewerReward;
           }
         } else {
           winStatus = "lost";
-          rewardAmount = -50.00;
+          rewardAmount = -1.00;
         }
       }
 
@@ -248,7 +248,7 @@ export default function MyEarnings() {
                     Reviewer Collateral Staking
                   </h4>
                   <p className="font-body text-xs text-[#94a3b8] leading-normal">
-                    Expert reviews require a collateral deposit of <strong className="text-white">50.00 USDC</strong> via Circle nanopayments to align incentives and prevent sybil attacks.
+                    Expert reviews require a collateral deposit of <strong className="text-white">1.00 USDC</strong> via Circle nanopayments to align incentives and prevent sybil attacks.
                   </p>
                 </div>
               </div>
@@ -260,7 +260,7 @@ export default function MyEarnings() {
                     USDC Yield Split
                   </h4>
                   <p className="font-body text-xs text-[#94a3b8] leading-normal">
-                    Consensus winners reclaim their 50.00 USDC collateral and split the slashed collateral pot of losing jury members and developers.
+                    Consensus winners reclaim their 1.00 USDC collateral and split the slashed collateral pot of losing jury members and developers.
                   </p>
                 </div>
               </div>
@@ -272,7 +272,7 @@ export default function MyEarnings() {
                     Alignment Index & Slashing
                   </h4>
                   <p className="font-body text-xs text-[#94a3b8] leading-normal">
-                    Maintain an Alignment Index above <strong className="text-white">80%</strong> to stay qualified. Voting against consensus slashes your 50.00 USDC collateral.
+                    Maintain an Alignment Index above <strong className="text-white">80%</strong> to stay qualified. Voting against consensus slashes your 1.00 USDC collateral.
                   </p>
                 </div>
               </div>

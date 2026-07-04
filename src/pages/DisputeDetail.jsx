@@ -411,7 +411,7 @@ export default function DisputeDetail() {
                 <div className="space-y-6 font-body">
                   <div className="bg-white/[0.02] border border-white/[0.07] p-3 rounded-lg flex items-center gap-2 text-xs">
                     <Coins className="h-4 w-4 text-[#4F6EF7]" />
-                    <span className="text-[#94a3b8]">Staking: <strong className="text-white">50.00 USDC</strong> required</span>
+                    <span className="text-[#94a3b8]">Staking: <strong className="text-white">1.00 USDC</strong> required</span>
                   </div>
 
                   <div className="space-y-2">

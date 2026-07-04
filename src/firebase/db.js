@@ -390,7 +390,7 @@ export const submitVote = async (disputeId, vote, justification, reviewerAddress
   dispute.votes[reviewerId] = vote;
   dispute.justifications[reviewerId] = justification;
 
-  // Staking USDC for voting: each reviewer stakes 50 USDC when they vote.
+  // Staking USDC for voting: each reviewer stakes 1 USDC when they vote.
   // When dispute resolves, stakes are redistributed.
   const transactions = getMockItem("verdict_transactions");
   const txHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join("");
@@ -398,7 +398,7 @@ export const submitVote = async (disputeId, vote, justification, reviewerAddress
   transactions.push({
     id: "tx_" + Math.random().toString(36).substr(2, 9),
     type: "stake",
-    amount: 50.00,
+    amount: 1.00,
     currency: "USDC",
     fromAddress: reviewerAddress,
     toAddress: "0xVerdictEscrowContract",
@@ -410,7 +410,7 @@ export const submitVote = async (disputeId, vote, justification, reviewerAddress
   // Deduct reviewer stake from earnings
   const reviewers = getMockItem("verdict_reviewers");
   const revIndex = reviewers.findIndex(r => r.id === reviewerId);
-  reviewers[revIndex].earnings -= 50.00;
+  reviewers[revIndex].earnings -= 1.00;
   reviewers[revIndex].votesCount += 1;
 
   // Check Resolution Condition (All 3 voters participated)
@@ -425,18 +425,18 @@ export const submitVote = async (disputeId, vote, justification, reviewerAddress
 
     // Payout / Slashing Logic (x402 protocol rules)
     const creatorStake = dispute.stakeAmount;
-    const totalReviewerStakes = 150.00; // 3 voters * 50 USDC
+    const totalReviewerStakes = 3.00; // 3 voters * 1 USDC
     const pot = creatorStake + totalReviewerStakes;
 
     if (dispute.consensus === "reject") {
       // Submitter won: Submitter gets original stake back + bonus from slashed reviewers.
-      // Reviewers who voted "reject" get their 50 stake back + splits the slash pot.
-      // Reviewer who voted "approve" gets slashed (loses their 50 stake).
+      // Reviewers who voted "reject" get their 1 stake back + splits the slash pot.
+      // Reviewer who voted "approve" gets slashed (loses their 1 stake).
       const winningReviewers = reviewers.filter(r => dispute.votes[r.id] === "reject");
       const losingReviewers = reviewers.filter(r => dispute.votes[r.id] === "approve");
 
-      // Submitter payout: returns 100% of stake + 20% bonus from losing stake
-      const userPayout = creatorStake + (losingReviewers.length * 20.00);
+      // Submitter payout: returns 100% of stake + 40% bonus from losing reviewer stake (0.40 USDC)
+      const userPayout = creatorStake + (losingReviewers.length * 0.40);
       const userWallet = getMockItem("verdict_user_wallet");
       userWallet.balance += userPayout;
       setMockItem("verdict_user_wallet", userWallet);
@@ -454,17 +454,17 @@ export const submitVote = async (disputeId, vote, justification, reviewerAddress
         disputeId: disputeId
       });
 
-      // Winning reviewers get 50 + split of remaining losing reviewer stakes
-      const reviewerBonus = losingReviewers.length > 0 ? (losingReviewers.length * 30.00) / winningReviewers.length : 0;
+      // Winning reviewers get 1 + split of remaining losing reviewer stakes (0.60 USDC)
+      const reviewerBonus = losingReviewers.length > 0 ? (losingReviewers.length * 0.60) / winningReviewers.length : 0;
       winningReviewers.forEach(winRev => {
         const idx = reviewers.findIndex(r => r.id === winRev.id);
-        reviewers[idx].earnings += (50.00 + reviewerBonus); // returns stake + reward
+        reviewers[idx].earnings += (1.00 + reviewerBonus); // returns stake + reward
         
         const revTxHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join("");
         transactions.push({
           id: "tx_" + Math.random().toString(36).substr(2, 9),
           type: "reward",
-          amount: 50.00 + reviewerBonus,
+          amount: 1.00 + reviewerBonus,
           currency: "USDC",
           fromAddress: "0xVerdictEscrowContract",
           toAddress: winRev.address,
@@ -477,21 +477,21 @@ export const submitVote = async (disputeId, vote, justification, reviewerAddress
     } else {
       // Submitter lost (consensus = approve, agent output is approved/valid).
       // Submitter's stake is slashed.
-      // Reviewers who voted "approve" get their 50 stake back + splits the creator's stake pot.
-      // Reviewers who voted "reject" get slashed (loses their 50 stake).
+      // Reviewers who voted "approve" get their 1 stake back + splits the creator's stake pot.
+      // Reviewers who voted "reject" get slashed (loses their 1 stake).
       const winningReviewers = reviewers.filter(r => dispute.votes[r.id] === "approve");
       const losingReviewers = reviewers.filter(r => dispute.votes[r.id] === "reject");
 
-      const reviewerReward = (creatorStake + (losingReviewers.length * 50.00)) / winningReviewers.length;
+      const reviewerReward = (creatorStake + (losingReviewers.length * 1.00)) / winningReviewers.length;
       winningReviewers.forEach(winRev => {
         const idx = reviewers.findIndex(r => r.id === winRev.id);
-        reviewers[idx].earnings += (50.00 + reviewerReward);
+        reviewers[idx].earnings += (1.00 + reviewerReward);
 
         const revTxHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join("");
         transactions.push({
           id: "tx_" + Math.random().toString(36).substr(2, 9),
           type: "reward",
-          amount: 50.00 + reviewerReward,
+          amount: 1.00 + reviewerReward,
           currency: "USDC",
           fromAddress: "0xVerdictEscrowContract",
           toAddress: winRev.address,
