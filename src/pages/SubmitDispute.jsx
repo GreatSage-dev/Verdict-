@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useAccount } from "wagmi";
+import { useAccount, useBalance } from "wagmi";
 import { FilePlus, ShieldAlert, Coins, HelpCircle } from "lucide-react";
 import { getPersonaDetails, createDispute } from "../firebase/db";
 import CountdownButton from "../components/CountdownButton";
@@ -10,6 +10,7 @@ import WalletGate from "../components/WalletGate";
 export default function SubmitDispute() {
   const navigate = useNavigate();
   const { address, isConnected } = useAccount();
+  const { data: balanceData } = useBalance({ address });
   const [persona, setPersona] = useState(() => getPersonaDetails(address));
   const [form, setForm] = useState({
     title: "",
@@ -39,7 +40,9 @@ export default function SubmitDispute() {
     
     const stake = parseFloat(form.stakeAmount);
     if (isNaN(stake) || stake < 5) return "Minimum stake amount is 5 USDC.";
-    if (stake > persona.balance) return `Insufficient USDC balance. You need ${stake} USDC, but currently have ${persona.balance.toFixed(2)} USDC.`;
+    
+    const displayBalance = balanceData ? parseFloat(balanceData.formatted) : 0;
+    if (stake > displayBalance) return `Insufficient USDC balance. You need ${stake} USDC, but currently have ${displayBalance.toFixed(2)} USDC.`;
     
     return "";
   };
@@ -111,7 +114,9 @@ export default function SubmitDispute() {
               <Coins className="h-5 w-5 text-[#4F6EF7]" />
               <div>
                 <span className="text-[10px] text-[#94a3b8] font-body uppercase tracking-wider block font-semibold">Your Wallet Balance</span>
-                <span className="font-mono text-sm text-white font-bold">{persona.balance.toFixed(2)} USDC</span>
+                <span className="font-mono text-sm text-white font-bold">
+                  {balanceData ? parseFloat(balanceData.formatted).toFixed(2) : "0.00"} USDC
+                </span>
               </div>
             </div>
             <span className="font-mono text-[10px] bg-white/[0.07] text-[#94a3b8] px-2 py-0.5 rounded uppercase font-semibold">

@@ -17,11 +17,12 @@ import {
   truncateAddress, 
   getArcExplorerUrl 
 } from "../firebase/db";
-import { useAccount } from "wagmi";
+import { useAccount, useBalance } from "wagmi";
 import WalletGate from "../components/WalletGate";
 
 export default function WalletConnect() {
   const { address } = useAccount();
+  const { data: balanceData } = useBalance({ address });
   const [persona, setPersona] = useState(() => getPersonaDetails(address));
   const [transactions, setTransactions] = useState([]);
   const [depositAmount, setDepositAmount] = useState("100");
@@ -114,7 +115,7 @@ export default function WalletConnect() {
               <div className="mb-6">
                 <span className="font-body text-xs text-[#94a3b8] block font-semibold">Balance</span>
                 <span className="font-headline font-extrabold text-3xl text-white tracking-tight">
-                  {persona.balance.toFixed(2)}{" "}
+                  {balanceData ? parseFloat(balanceData.formatted).toFixed(2) : "0.00"}{" "}
                   <span className="text-xs font-semibold text-[#4F6EF7] font-mono">USDC</span>
                 </span>
               </div>

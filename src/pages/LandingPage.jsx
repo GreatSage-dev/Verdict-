@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useAccount } from "wagmi";
+import { useAccount, useBalance } from "wagmi";
 import { 
   Scale, 
   ShieldAlert, 
@@ -26,6 +26,7 @@ const ROTATOR_WORDS = ["Machine Economy", "Agent Economy", "Risk Economy", "Trus
 
 export default function LandingPage() {
   const { address, isConnected } = useAccount();
+  const { data: balanceData } = useBalance({ address });
   const [stats, setStats] = useState({
     totalStaked: 0,
     openDisputes: 0,
@@ -472,7 +473,7 @@ export default function LandingPage() {
                     {persona.address}
                   </div>
                   <div className="font-mono text-xs text-[#00D48B] mt-1 font-bold">
-                    {persona.balance.toFixed(2)} USDC
+                    {balanceData ? parseFloat(balanceData.formatted).toFixed(2) : "0.00"} USDC
                   </div>
                 </div>
               </div>
