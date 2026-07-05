@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAccount, useBalance } from "wagmi";
 import { 
@@ -10,10 +10,14 @@ import {
   Wallet, 
   Menu, 
   X, 
-  UserCheck 
+  UserCheck,
+  Shield,
+  AlertTriangle
 } from "lucide-react";
 import { 
-  truncateAddress 
+  truncateAddress,
+  isRegisteredReviewer,
+  getEscalatedDisputes
 } from "../firebase/db";
 
 export default function Navbar() {
@@ -21,6 +25,23 @@ export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const { address, isConnected } = useAccount();
   const { data: balanceData } = useBalance({ address });
+  const [escalatedCount, setEscalatedCount] = useState(0);
+
+  const isReviewer = isConnected && address && isRegisteredReviewer(address);
+
+  // Load escalated dispute count for badge
+  useEffect(() => {
+    const loadCount = async () => {
+      if (isReviewer) {
+        const disputes = await getEscalatedDisputes();
+        setEscalatedCount(disputes.filter(d => d.status === "escalated").length);
+      }
+    };
+    loadCount();
+    const handleUpdate = () => loadCount();
+    window.addEventListener("verdictDbUpdated", handleUpdate);
+    return () => window.removeEventListener("verdictDbUpdated", handleUpdate);
+  }, [isReviewer, address]);
 
   const navItems = [
     { name: "Home", path: "/", icon: Home },
@@ -28,35 +49,23 @@ export default function Navbar() {
     { name: "Open Disputes", path: "/disputes", icon: Scale },
     { name: "My Disputes", path: "/my-disputes", icon: History },
     { name: "My Earnings", path: "/earnings", icon: TrendingUp },
+    { name: "Become a Reviewer", path: "/become-reviewer", icon: Shield },
+    ...(isReviewer ? [{ name: "Escalation Queue", path: "/escalation-queue", icon: AlertTriangle, badge: escalatedCount }] : []),
     { name: "Circle Wallet", path: "/wallet", icon: Wallet },
   ];
-
-  // Map known expert reviewer addresses or default to submitter role
-  const isReviewer1 = address && address.toLowerCase() === "0x75cc548C8C0470309754d8bB9e5F1E048C639AcB".toLowerCase();
-  const isReviewer2 = false;
-  const isReviewer3 = false;
 
   let name = "Not Connected";
   let role = "Please connect wallet";
   let avatar = "🔌";
 
   if (isConnected && address) {
-    role = "Submitter Role";
-    avatar = "👤";
-    if (isReviewer1) {
-      name = "Alice (Lead Auditor)";
-      role = "Expert Reviewer";
-      avatar = "👩‍💻";
-    } else if (isReviewer2) {
-      name = "Bob (NLP Scientist)";
-      role = "Expert Reviewer";
-      avatar = "👨‍🔬";
-    } else if (isReviewer3) {
-      name = "Charlie (Smart Contracts)";
-      role = "Expert Reviewer";
-      avatar = "🧙‍♂️";
+    name = truncateAddress(address);
+    if (isReviewer) {
+      role = "Human Reviewer";
+      avatar = "⚖️";
     } else {
-      name = truncateAddress(address);
+      role = "Submitter Role";
+      avatar = "👤";
     }
   }
 
@@ -103,6 +112,11 @@ export default function Navbar() {
                 >
                   <Icon className={`h-5 w-5 ${isActive ? "text-primary" : "text-textSub"}`} />
                   <span>{item.name}</span>
+                  {item.badge > 0 && (
+                    <span className="ml-auto bg-[#F7476E] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                      {item.badge}
+                    </span>
+                  )}
                 </Link>
               );
             })}
@@ -159,6 +173,11 @@ export default function Navbar() {
               >
                 <Icon className={`h-4 w-4 ${isActive ? "text-[#3b82f6]" : "text-textSub"}`} />
                 <span className="font-medium">{item.name}</span>
+                {item.badge > 0 && (
+                  <span className="ml-auto bg-[#F7476E] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                    {item.badge}
+                  </span>
+                )}
               </Link>
             );
           })}

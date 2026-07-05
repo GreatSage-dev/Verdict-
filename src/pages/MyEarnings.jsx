@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAccount } from "wagmi";
 import { TrendingUp, Coins, Award, HelpCircle, ArrowUpRight, Scale, ShieldAlert } from "lucide-react";
-import { getDisputes, getPersonaDetails, truncateAddress, getArcExplorerUrl } from "../firebase/db";
+import { getDisputes, getPersonaDetails, truncateAddress, getArcExplorerUrl, isRegisteredReviewer, getRegisteredReviewer } from "../firebase/db";
 import WalletGate from "../components/WalletGate";
 
 export default function MyEarnings() {
@@ -23,6 +23,18 @@ export default function MyEarnings() {
     setPersona(currentPersona);
 
     const allDisputes = await getDisputes();
+    
+    // Check for human review earnings from registered reviewer store
+    const registeredData = getRegisteredReviewer(userAddress);
+    const humanReviewEarnings = registeredData ? registeredData.earnings : 0;
+    const humanReviewCount = registeredData ? registeredData.votesCount : 0;
+
+    // Also check disputes this user reviewed as a human reviewer
+    const humanReviewedDisputes = allDisputes.filter(
+      d => d.humanReviewerAddress?.toLowerCase() === userAddress.toLowerCase() && d.status === "resolved"
+    );
+
+    // Legacy vote-based earnings
     const votedDisputes = allDisputes.filter(
       d => d.voters.includes(currentPersona.id)
     );
@@ -31,7 +43,7 @@ export default function MyEarnings() {
     let correctVotes = 0;
     let finishedVotes = 0;
 
-    const formattedHistory = votedDisputes.map(d => {
+    const voteHistory = votedDisputes.map(d => {
       const myVote = d.votes[currentPersona.id];
       const isResolved = d.status === "resolved";
       
@@ -75,18 +87,37 @@ export default function MyEarnings() {
         createdAt: d.createdAt,
         winStatus,
         rewardAmount,
-        txHash: d.txHash
+        txHash: d.txHash,
+        type: "vote"
       };
-    }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    });
 
+    // Human review history entries
+    const reviewHistory = humanReviewedDisputes.map(d => ({
+      id: d.id,
+      title: d.title,
+      myVote: d.humanVerdict === "agent_failed" ? "reject" : "approve",
+      consensus: d.consensus,
+      status: d.status,
+      createdAt: d.humanReviewedAt || d.resolvedAt,
+      winStatus: "review",
+      rewardAmount: d.reviewerReward || 2.00,
+      txHash: d.txHash,
+      type: "human_review"
+    }));
+
+    const allHistory = [...voteHistory, ...reviewHistory]
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    const totalVoteCount = votedDisputes.length + humanReviewCount;
     const alignment = finishedVotes > 0 ? Math.round((correctVotes / finishedVotes) * 100) : 100;
-    const displayEarnings = currentPersona.role === "reviewer" ? currentPersona.balance : 0;
+    const displayEarnings = humanReviewEarnings + (currentPersona.role === "reviewer" ? currentPersona.balance : 0);
 
-    setHistory(formattedHistory);
+    setHistory(allHistory);
     setStats({
       totalEarnings: displayEarnings,
       lockedStakes: activeStakes,
-      totalVotes: votedDisputes.length,
+      totalVotes: totalVoteCount,
       alignmentIndex: alignment
     });
   };
@@ -127,7 +158,7 @@ export default function MyEarnings() {
             <div>
               <span className="text-white font-semibold">Submitter Account Connected:</span> You are currently connected with a Submitter wallet. 
               Submitters do not vote on disputes and do not receive reviewer yields. 
-              To view mock reviewer earnings, connect one of the pre-seeded reviewer addresses (Alice, Bob, or Charlie).
+              <Link to="/become-reviewer" className="text-[#4F6EF7] font-semibold hover:underline">Become a Reviewer</Link> to start earning 2.00 USDC per completed human review.
             </div>
           </div>
         )}
@@ -185,13 +216,19 @@ export default function MyEarnings() {
                       <div key={item.id} className="p-5 flex items-start justify-between gap-6 hover:bg-white/[0.02] transition-colors duration-200 relative">
                         <div className="space-y-1.5 min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase ${
-                              item.myVote === "reject" 
-                                ? "bg-[#F7476E]/10 border-[#F7476E]/20 text-[#F7476E]" 
-                                : "bg-[#00D48B]/10 border-[#00D48B]/20 text-[#00D48B]"
-                            }`}>
-                              Voted: {item.myVote}
-                            </span>
+                            {item.type === "human_review" ? (
+                              <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase bg-[#4F6EF7]/10 border-[#4F6EF7]/20 text-[#4F6EF7]">
+                                Human Review
+                              </span>
+                            ) : (
+                              <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase ${
+                                item.myVote === "reject" 
+                                  ? "bg-[#F7476E]/10 border-[#F7476E]/20 text-[#F7476E]" 
+                                  : "bg-[#00D48B]/10 border-[#00D48B]/20 text-[#00D48B]"
+                              }`}>
+                                Voted: {item.myVote}
+                              </span>
+                            )}
                             <span className="text-[10px] text-[#94a3b8] font-mono">
                               Case ID: {item.id}
                             </span>
@@ -218,9 +255,9 @@ export default function MyEarnings() {
                           <div>
                             <span className="text-[#94a3b8] block text-[9px] uppercase font-semibold">State</span>
                             <span className={`font-mono font-semibold text-[10px] mt-0.5 block uppercase ${
-                              isWon ? "text-[#00D48B]" : isLost ? "text-[#F7476E]" : "text-[#F5A623]"
+                              item.winStatus === "review" ? "text-[#4F6EF7]" : isWon ? "text-[#00D48B]" : isLost ? "text-[#F7476E]" : "text-[#F5A623]"
                             }`}>
-                              {item.winStatus}
+                              {item.winStatus === "review" ? "reviewed" : item.winStatus}
                             </span>
                           </div>
                         </div>

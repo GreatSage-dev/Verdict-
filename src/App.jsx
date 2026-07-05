@@ -10,6 +10,9 @@ import DisputeDetail from "./pages/DisputeDetail";
 import MyDisputes from "./pages/MyDisputes";
 import MyEarnings from "./pages/MyEarnings";
 import WalletConnect from "./pages/WalletConnect";
+import BecomeReviewer from "./pages/BecomeReviewer";
+import EscalationQueue from "./pages/EscalationQueue";
+import ReviewDispute from "./pages/ReviewDispute";
 
 function App() {
   // Use sessionStorage so that refresh during development doesn't force re-entry
@@ -57,6 +60,9 @@ function App() {
                 <Route path="/my-disputes" element={<MyDisputes />} />
                 <Route path="/earnings" element={<MyEarnings />} />
                 <Route path="/wallet" element={<WalletConnect />} />
+                <Route path="/become-reviewer" element={<BecomeReviewer />} />
+                <Route path="/escalation-queue" element={<EscalationQueue />} />
+                <Route path="/review/:id" element={<ReviewDispute />} />
               </Routes>
             </main>
           </div>

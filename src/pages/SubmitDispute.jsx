@@ -4,7 +4,8 @@ import { motion } from "framer-motion";
 import { useAccount, useBalance, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { parseUnits, getAddress } from "viem";
 import { FilePlus, ShieldAlert, Coins, HelpCircle, ExternalLink } from "lucide-react";
-import { getPersonaDetails, createDispute } from "../firebase/db";
+import { getPersonaDetails, createDispute, updateDisputeWithAIJudge } from "../firebase/db";
+import { runAIJudge } from "../firebase/aiJudge";
 import CountdownButton from "../components/CountdownButton";
 import WalletGate from "../components/WalletGate";
 
@@ -145,8 +146,8 @@ export default function SubmitDispute() {
     if (isTxConfirmed && txHash && isProcessing) {
       const finalizeDispute = async () => {
         try {
-          setStatusMessage("Transfer confirmed! Storing dispute case on-chain...");
-          await createDispute(
+          setStatusMessage("Transfer confirmed! Storing dispute case...");
+          const newDispute = await createDispute(
             form.title,
             form.prompt,
             form.agentOutput,
@@ -158,8 +159,25 @@ export default function SubmitDispute() {
             form.evidence // Verified evidence link or base64 image string
           );
           
+          // Run AI Judge single-pass analysis
+          setStatusMessage("🤖 AI Judge analyzing dispute evidence...");
+          const aiResult = await runAIJudge(newDispute);
+          
+          // Update dispute with AI Judge result (auto-resolve or escalate)
+          await updateDisputeWithAIJudge(newDispute.id, aiResult);
+          
+          if (aiResult.shouldEscalate) {
+            setStatusMessage(`⚠️ AI Judge confidence: ${aiResult.confidence}% — Escalating to human review...`);
+          } else {
+            setStatusMessage(`✅ AI Judge auto-resolved with ${aiResult.confidence}% confidence`);
+          }
+          
           window.dispatchEvent(new Event("verdictDbUpdated"));
-          navigate("/disputes");
+          
+          // Brief delay to show the AI Judge result before navigating
+          setTimeout(() => {
+            navigate(`/disputes/${newDispute.id}`);
+          }, 2000);
         } catch (e) {
           console.error("Failed to store dispute", e);
           setError(e.message || "Failed to record dispute case.");

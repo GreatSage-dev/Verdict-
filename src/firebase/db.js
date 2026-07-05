@@ -14,6 +14,9 @@ import {
 // Configurable consensus threshold — raise to 3 when more real reviewers are onboarded
 export const REQUIRED_VOTES_FOR_CONSENSUS = 1;
 
+// Reviewer reward per completed human review (flat rate)
+export const REVIEWER_REWARD_USDC = 2.00;
+
 // Seed Data definition
 export const DEFAULT_REVIEWERS = [
   { 
@@ -166,6 +169,10 @@ export const initializeMockDB = (force = false) => {
     localStorage.setItem("verdict_seeded", "true");
     console.log("Mock database pre-seeded in LocalStorage.");
   }
+  // Ensure registered reviewers list exists even on older seeds
+  if (!localStorage.getItem("verdict_registered_reviewers")) {
+    localStorage.setItem("verdict_registered_reviewers", JSON.stringify([]));
+  }
   if (localStorage.getItem("verdict_wallet_connected") === null) {
     localStorage.setItem("verdict_wallet_connected", "false");
   }
@@ -195,24 +202,25 @@ export const getPersonaDetails = (address) => {
     };
   }
   const addrLower = address.toLowerCase();
-  const isReviewer1 = addrLower === "0x75cc548C8C0470309754d8bB9e5F1E048C639AcB".toLowerCase();
-  const isReviewer2 = false;
-  const isReviewer3 = false;
 
-  if (isReviewer1) {
-    const reviewers = getMockItem("verdict_reviewers") || DEFAULT_REVIEWERS;
-    const reviewer = reviewers.find(r => r.id === "rev_1") || DEFAULT_REVIEWERS[0];
-    return { ...reviewer, role: "reviewer", balance: reviewer.earnings };
-  }
-  if (isReviewer2) {
-    const reviewers = getMockItem("verdict_reviewers") || DEFAULT_REVIEWERS;
-    const reviewer = reviewers.find(r => r.id === "rev_2") || DEFAULT_REVIEWERS[1];
-    return { ...reviewer, role: "reviewer", balance: reviewer.earnings };
-  }
-  if (isReviewer3) {
-    const reviewers = getMockItem("verdict_reviewers") || DEFAULT_REVIEWERS;
-    const reviewer = reviewers.find(r => r.id === "rev_3") || DEFAULT_REVIEWERS[2];
-    return { ...reviewer, role: "reviewer", balance: reviewer.earnings };
+  // Check registered reviewers (dynamic, any wallet can register)
+  const registeredReviewers = getMockItem("verdict_registered_reviewers") || [];
+  const registered = registeredReviewers.find(r => r.address.toLowerCase() === addrLower);
+  
+  // Also check legacy hardcoded reviewer for backward compatibility
+  const isLegacyReviewer = addrLower === "0x75cc548C8C0470309754d8bB9e5F1E048C639AcB".toLowerCase();
+
+  if (registered || isLegacyReviewer) {
+    return {
+      id: registered ? registered.id : "rev_1",
+      name: truncateAddress(address),
+      address: address,
+      avatar: "⚖️",
+      specialty: "Human Reviewer",
+      role: "reviewer",
+      balance: registered ? registered.earnings : 0,
+      reviewsCompleted: registered ? registered.votesCount : 0
+    };
   }
 
   // Otherwise, treat as submitter
@@ -584,6 +592,164 @@ export const depositUSDC = async (amount, userAddress) => {
   }
 
   window.dispatchEvent(new Event("verdictDbUpdated"));
+};
+
+// ==========================================
+// ESCALATION QUEUE & HUMAN REVIEW
+// ==========================================
+export const getEscalatedDisputes = async () => {
+  if (isFirebaseConfigured) {
+    try {
+      const q = query(collection(db, "disputes"), where("status", "in", ["escalated", "claimed"]));
+      const snap = await getDocs(q);
+      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    } catch (e) {
+      console.error("Firestore getEscalatedDisputes failed, falling back", e);
+    }
+  }
+  const disputes = getMockItem("verdict_disputes") || [];
+  return disputes.filter(d => d.status === "escalated" || d.status === "claimed");
+};
+
+export const claimDispute = async (disputeId, reviewerAddress) => {
+  const disputes = getMockItem("verdict_disputes") || [];
+  const index = disputes.findIndex(d => d.id === disputeId);
+  if (index === -1) throw new Error("Dispute not found.");
+  const dispute = disputes[index];
+  if (dispute.status !== "escalated") throw new Error("Dispute is not available for claiming.");
+  if (dispute.claimedBy) throw new Error("Dispute already claimed by another reviewer.");
+  
+  dispute.status = "claimed";
+  dispute.claimedBy = reviewerAddress;
+  dispute.claimedAt = new Date().toISOString();
+  setMockItem("verdict_disputes", disputes);
+  window.dispatchEvent(new Event("verdictDbUpdated"));
+  return dispute;
+};
+
+export const submitHumanReview = async (disputeId, verdict, reasoning, reviewerAddress) => {
+  if (!reasoning || reasoning.trim().length < 50) {
+    throw new Error("Reasoning must be at least 50 characters.");
+  }
+  if (!['agent_fulfilled', 'agent_failed'].includes(verdict)) {
+    throw new Error("Verdict must be 'agent_fulfilled' or 'agent_failed'.");
+  }
+
+  const disputes = getMockItem("verdict_disputes");
+  const index = disputes.findIndex(d => d.id === disputeId);
+  if (index === -1) throw new Error("Dispute not found.");
+  
+  const dispute = disputes[index];
+  if (dispute.status !== "claimed") throw new Error("Dispute must be claimed before reviewing.");
+  if (dispute.claimedBy?.toLowerCase() !== reviewerAddress.toLowerCase()) {
+    throw new Error("You did not claim this dispute.");
+  }
+
+  // Record human review
+  dispute.humanVerdict = verdict;
+  dispute.humanReasoning = reasoning;
+  dispute.humanReviewerAddress = reviewerAddress;
+  dispute.humanReviewedAt = new Date().toISOString();
+  dispute.reviewerReward = REVIEWER_REWARD_USDC;
+  dispute.status = "resolved";
+  dispute.resolvedAt = new Date().toISOString();
+  dispute.consensus = verdict === "agent_failed" ? "reject" : "approve";
+  setMockItem("verdict_disputes", disputes);
+
+  // Pay the reviewer from registered reviewers store
+  const registered = getMockItem("verdict_registered_reviewers") || [];
+  const revIdx = registered.findIndex(r => r.address.toLowerCase() === reviewerAddress.toLowerCase());
+  if (revIdx !== -1) {
+    registered[revIdx].votesCount = (registered[revIdx].votesCount || 0) + 1;
+    registered[revIdx].earnings = (registered[revIdx].earnings || 0) + REVIEWER_REWARD_USDC;
+    setMockItem("verdict_registered_reviewers", registered);
+  }
+
+  // Record transaction
+  const transactions = getMockItem("verdict_transactions") || [];
+  transactions.push({
+    id: "tx_" + Math.random().toString(36).substr(2, 9),
+    type: "reward",
+    amount: REVIEWER_REWARD_USDC,
+    currency: "USDC",
+    fromAddress: "0xVerdictEscrowContract",
+    toAddress: reviewerAddress,
+    timestamp: new Date().toISOString(),
+    hash: "0x" + Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join(""),
+    disputeId: disputeId
+  });
+  setMockItem("verdict_transactions", transactions);
+
+  window.dispatchEvent(new Event("verdictDbUpdated"));
+  return dispute;
+};
+
+// ==========================================
+// REVIEWER REGISTRATION (Open role, any wallet)
+// ==========================================
+export const registerReviewer = async (address) => {
+  if (!address) throw new Error("Wallet address required.");
+  const addrLower = address.toLowerCase();
+  const registered = getMockItem("verdict_registered_reviewers") || [];
+  if (registered.find(r => r.address.toLowerCase() === addrLower)) {
+    return registered.find(r => r.address.toLowerCase() === addrLower);
+  }
+  const newReviewer = {
+    id: `rev_${Date.now()}`,
+    address,
+    name: `Reviewer ${truncateAddress(address)}`,
+    avatar: "⚖️",
+    specialty: "General Review",
+    earnings: 0,
+    votesCount: 0,
+    registeredAt: new Date().toISOString(),
+    status: "active"
+  };
+  registered.push(newReviewer);
+  setMockItem("verdict_registered_reviewers", registered);
+  window.dispatchEvent(new Event("verdictDbUpdated"));
+  return newReviewer;
+};
+
+export const isRegisteredReviewer = (address) => {
+  if (!address) return false;
+  const addrLower = address.toLowerCase();
+  const registered = getMockItem("verdict_registered_reviewers") || [];
+  return registered.some(r => r.address.toLowerCase() === addrLower);
+};
+
+export const getRegisteredReviewer = (address) => {
+  if (!address) return null;
+  const addrLower = address.toLowerCase();
+  const registered = getMockItem("verdict_registered_reviewers") || [];
+  return registered.find(r => r.address.toLowerCase() === addrLower) || null;
+};
+
+// ==========================================
+// AI JUDGE RESULT STORAGE
+// ==========================================
+export const updateDisputeWithAIJudge = async (disputeId, aiResult) => {
+  const disputes = getMockItem("verdict_disputes");
+  const index = disputes.findIndex(d => d.id === disputeId);
+  if (index === -1) return;
+  
+  const dispute = disputes[index];
+  dispute.aiJudgeVerdict = aiResult.verdict;
+  dispute.aiJudgeConfidence = aiResult.confidence;
+  dispute.aiJudgeReasoning = aiResult.reasoning;
+  dispute.aiJudgeTimestamp = new Date().toISOString();
+  
+  if (aiResult.shouldEscalate) {
+    dispute.status = "escalated";
+  } else {
+    dispute.status = "resolved";
+    dispute.resolvedAt = new Date().toISOString();
+    dispute.consensus = aiResult.verdict === "agent_failed" ? "reject" : "approve";
+  }
+  
+  setMockItem("verdict_disputes", disputes);
+  window.dispatchEvent(new Event("verdictDbUpdated"));
+  return dispute;
 };
 
 // ==========================================
