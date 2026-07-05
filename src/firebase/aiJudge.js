@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
-// AI Judge – Real LLM-Powered Verdict Engine
+// AI Judge – Real LLM-Powered Verdict Engine (Google Gemini)
 // ---------------------------------------------------------------------------
-// Calls Anthropic Claude or OpenAI GPT to analyze dispute evidence and return
+// Calls Google Gemini 2.0 Flash to analyze dispute evidence and return
 // a structured verdict with confidence score and reasoning.
 // Falls back to insufficient_evidence/0 on any failure.
 // ---------------------------------------------------------------------------
@@ -14,18 +14,7 @@ export const REVIEWER_REWARD_USDC = 2.0;
 
 // ── API Key Detection ───────────────────────────────────────────────────────
 
-const getAnthropicKey = () => import.meta.env.VITE_ANTHROPIC_API_KEY || '';
-const getOpenAIKey = () => import.meta.env.VITE_OPENAI_API_KEY || '';
-
-/**
- * Determine which LLM provider is available.
- * Priority: Anthropic > OpenAI
- */
-const getProvider = () => {
-  if (getAnthropicKey()) return 'anthropic';
-  if (getOpenAIKey()) return 'openai';
-  return null;
-};
+const getGeminiKey = () => import.meta.env.VITE_GEMINI_API_KEY || '';
 
 // ── System Prompt ───────────────────────────────────────────────────────────
 
@@ -65,7 +54,7 @@ Verdict meanings:
 
 Do NOT include any text outside the JSON object. Do NOT use markdown code blocks. Return ONLY the raw JSON.`;
 
-// ── LLM API Calls ───────────────────────────────────────────────────────────
+// ── User Message Builder ────────────────────────────────────────────────────
 
 /**
  * Build the user message from dispute fields.
@@ -99,63 +88,46 @@ const buildUserMessage = (dispute) => {
   return parts.join('\n');
 };
 
+// ── Gemini API Call ─────────────────────────────────────────────────────────
+
 /**
- * Call Anthropic Claude API.
+ * Call Google Gemini 2.0 Flash via the REST API.
  */
-const callAnthropic = async (userMessage) => {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+const callGemini = async (userMessage) => {
+  const apiKey = getGeminiKey();
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': getAnthropicKey(),
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 512,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userMessage }],
-    }),
-  });
-
-  if (!response.ok) {
-    const errBody = await response.text();
-    throw new Error(`Anthropic API error ${response.status}: ${errBody}`);
-  }
-
-  const data = await response.json();
-  return data.content?.[0]?.text || '';
-};
-
-/**
- * Call OpenAI Chat Completions API.
- */
-const callOpenAI = async (userMessage) => {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${getOpenAIKey()}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      max_tokens: 512,
-      temperature: 0.3,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userMessage },
+      system_instruction: {
+        parts: [{ text: SYSTEM_PROMPT }],
+      },
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: userMessage }],
+        },
       ],
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 512,
+        responseMimeType: 'application/json',
+      },
     }),
   });
 
   if (!response.ok) {
     const errBody = await response.text();
-    throw new Error(`OpenAI API error ${response.status}: ${errBody}`);
+    throw new Error(`Gemini API error ${response.status}: ${errBody}`);
   }
 
   const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return text;
 };
 
 // ── Response Parser ─────────────────────────────────────────────────────────
@@ -198,7 +170,7 @@ const parseResponse = (raw) => {
 // ── Public API ──────────────────────────────────────────────────────────────
 
 /**
- * Runs a single-pass AI Judge analysis on a dispute object using a real LLM.
+ * Runs a single-pass AI Judge analysis on a dispute object using Google Gemini.
  *
  * @param {Object} dispute - The dispute to analyze
  * @returns {Promise<{
@@ -210,31 +182,25 @@ const parseResponse = (raw) => {
  * }>}
  */
 export const runAIJudge = async (dispute) => {
-  const provider = getProvider();
+  const apiKey = getGeminiKey();
 
-  if (!provider) {
-    console.warn('AI Judge: No LLM API key found (set VITE_ANTHROPIC_API_KEY or VITE_OPENAI_API_KEY in .env)');
+  if (!apiKey) {
+    console.warn('AI Judge: No Gemini API key found (set VITE_GEMINI_API_KEY in .env)');
     return {
       verdict: 'insufficient_evidence',
       confidence: 0,
-      reasoning: 'No LLM API key configured. Set VITE_ANTHROPIC_API_KEY or VITE_OPENAI_API_KEY in your .env file to enable real AI Judge analysis. This dispute has been escalated to human review.',
+      reasoning: 'No Gemini API key configured. Set VITE_GEMINI_API_KEY in your .env file to enable real AI Judge analysis. This dispute has been escalated to human review.',
       shouldEscalate: true,
       provider: 'none',
     };
   }
 
   try {
-    console.log(`AI Judge: Calling ${provider} API...`);
+    console.log('AI Judge: Calling Gemini 2.0 Flash...');
     const userMessage = buildUserMessage(dispute);
+    const rawResponse = await callGemini(userMessage);
 
-    let rawResponse;
-    if (provider === 'anthropic') {
-      rawResponse = await callAnthropic(userMessage);
-    } else {
-      rawResponse = await callOpenAI(userMessage);
-    }
-
-    console.log(`AI Judge: Raw response from ${provider}:`, rawResponse);
+    console.log('AI Judge: Raw Gemini response:', rawResponse);
 
     const { verdict, confidence, reasoning } = parseResponse(rawResponse);
     const shouldEscalate = confidence < AI_JUDGE_CONFIDENCE_THRESHOLD;
@@ -244,17 +210,17 @@ export const runAIJudge = async (dispute) => {
       confidence,
       reasoning,
       shouldEscalate,
-      provider,
+      provider: 'gemini',
     };
   } catch (error) {
-    console.error(`AI Judge: ${provider} call failed:`, error);
+    console.error('AI Judge: Gemini call failed:', error);
 
     return {
       verdict: 'insufficient_evidence',
       confidence: 0,
-      reasoning: `AI Judge analysis failed (${provider}): ${error.message}. This dispute has been escalated to human review as a safety measure.`,
+      reasoning: `AI Judge analysis failed (Gemini): ${error.message}. This dispute has been escalated to human review as a safety measure.`,
       shouldEscalate: true,
-      provider: `${provider}_error`,
+      provider: 'gemini_error',
     };
   }
 };
