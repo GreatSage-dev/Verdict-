@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
-import { parseUnits, getAddress } from "viem";
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useSignTypedData } from "wagmi";
+import { parseUnits, getAddress, hexToSignature } from "viem";
 import { 
   ArrowLeft, 
   Clock, 
@@ -13,7 +13,8 @@ import {
   MessageSquare, 
   ThumbsUp, 
   ThumbsDown, 
-  Coins 
+  Coins,
+  PenTool
 } from "lucide-react";
 import { 
   getDisputeById, 
@@ -31,18 +32,52 @@ import WalletGate from "../components/WalletGate";
 const PROTOCOL_TREASURY = getAddress("0x89d22efdc476f57134371c80e1a686db156291c7");
 const USDC_CONTRACT_ADDRESS = getAddress("0x3600000000000000000000000000000000000000");
 
-const erc20Abi = [
+// EIP-3009 transferWithAuthorization ABI
+const transferWithAuthorizationABI = [
   {
-    name: 'transfer',
+    name: 'transferWithAuthorization',
     type: 'function',
     stateMutability: 'nonpayable',
     inputs: [
-      { name: 'recipient', type: 'address' },
-      { name: 'amount', type: 'uint256' }
+      { name: 'from', type: 'address' },
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'validAfter', type: 'uint256' },
+      { name: 'validBefore', type: 'uint256' },
+      { name: 'nonce', type: 'bytes32' },
+      { name: 'v', type: 'uint8' },
+      { name: 'r', type: 'bytes32' },
+      { name: 's', type: 'bytes32' }
     ],
-    outputs: [{ name: '', type: 'bool' }]
+    outputs: []
   }
 ];
+
+// EIP-712 domain for USDC on Arc Testnet (chainId 5042002)
+const USDC_EIP712_DOMAIN = {
+  name: 'USD Coin',
+  version: '2',
+  chainId: 5042002,
+  verifyingContract: USDC_CONTRACT_ADDRESS
+};
+
+// EIP-712 types for TransferWithAuthorization (EIP-3009)
+const TRANSFER_WITH_AUTHORIZATION_TYPES = {
+  TransferWithAuthorization: [
+    { name: 'from', type: 'address' },
+    { name: 'to', type: 'address' },
+    { name: 'value', type: 'uint256' },
+    { name: 'validAfter', type: 'uint256' },
+    { name: 'validBefore', type: 'uint256' },
+    { name: 'nonce', type: 'bytes32' }
+  ]
+};
+
+// Generate a random 32-byte nonce for EIP-3009 (non-sequential, per spec)
+function generateEIP3009Nonce() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 export default function DisputeDetail() {
   const { id } = useParams();
@@ -54,14 +89,15 @@ export default function DisputeDetail() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
-  // Nanopayment on-chain transaction state
+  // EIP-3009 nanopayment state
   const [isVoting, setIsVoting] = useState(false);
   const [voteStatusMessage, setVoteStatusMessage] = useState("");
   const [confirmedVoteTxHash, setConfirmedVoteTxHash] = useState(null);
 
-  // Wagmi hooks for the reviewer nanopayment
-  const { writeContractAsync, data: voteTxHash, isPending: isVoteTxSending } = useWriteContract();
-  const { isLoading: isVoteTxConfirming, isSuccess: isVoteTxConfirmed, error: voteConfirmError } = useWaitForTransactionReceipt({
+  // Wagmi hooks for EIP-3009 flow
+  const { signTypedDataAsync } = useSignTypedData();
+  const { writeContractAsync, data: voteTxHash } = useWriteContract();
+  const { isSuccess: isVoteTxConfirmed, error: voteConfirmError } = useWaitForTransactionReceipt({
     hash: voteTxHash,
   });
 
@@ -101,37 +137,74 @@ export default function DisputeDetail() {
 
     setError("");
     setIsVoting(true);
-    setVoteStatusMessage("Opening wallet for $0.01 USDC nanopayment...");
 
     try {
-      // Step 1: Trigger real on-chain $0.01 USDC nanopayment via ERC-20 transfer
+      // === STEP 1: EIP-3009 Off-chain Signature (GASLESS for reviewer) ===
+      setVoteStatusMessage("Step 1/2: Sign payment authorization (gasless)...");
+
+      const nonce = generateEIP3009Nonce();
+      const nanopaymentAmount = parseUnits("0.01", 6); // $0.01 USDC
+      const validAfter = 0n; // valid immediately
+      const validBefore = BigInt(Math.floor(Date.now() / 1000) + 3600); // expires in 1 hour
+
+      const message = {
+        from: address,
+        to: PROTOCOL_TREASURY,
+        value: nanopaymentAmount,
+        validAfter,
+        validBefore,
+        nonce
+      };
+
+      // Sign EIP-712 typed data — MetaMask shows a signature popup (no gas)
+      const signature = await signTypedDataAsync({
+        domain: USDC_EIP712_DOMAIN,
+        types: TRANSFER_WITH_AUTHORIZATION_TYPES,
+        primaryType: 'TransferWithAuthorization',
+        message
+      });
+
+      // Split signature into v, r, s for the contract call
+      const { v, r, s } = hexToSignature(signature);
+
+      // === STEP 2: Submit authorization on-chain ===
+      setVoteStatusMessage("Step 2/2: Submitting authorization on-chain...");
+
       await writeContractAsync({
         address: USDC_CONTRACT_ADDRESS,
-        abi: erc20Abi,
-        functionName: "transfer",
+        abi: transferWithAuthorizationABI,
+        functionName: 'transferWithAuthorization',
         args: [
-          PROTOCOL_TREASURY,
-          parseUnits("0.01", 6) // $0.01 USDC in 6 decimals
+          address,           // from (signer)
+          PROTOCOL_TREASURY, // to (protocol treasury)
+          nanopaymentAmount, // value ($0.01 USDC)
+          validAfter,        // validAfter (0 = immediate)
+          validBefore,       // validBefore (1 hour window)
+          nonce,             // random 32-byte nonce
+          Number(v),         // signature v
+          r,                 // signature r
+          s                  // signature s
         ]
       });
 
       // Save vote data to finalize after tx confirmation
       setPendingVote({ vote: voteSelection, justification });
-      setVoteStatusMessage("Nanopayment submitted! Waiting for block confirmation...");
+      setVoteStatusMessage("Authorization submitted! Waiting for block confirmation...");
     } catch (e) {
-      console.error("Reviewer nanopayment failed", e);
-      setError(e.message || "Nanopayment signature rejected or failed.");
+      console.error("EIP-3009 nanopayment failed", e);
+      const msg = e?.shortMessage || e?.message || "Nanopayment authorization failed.";
+      setError(msg);
       setIsVoting(false);
       setVoteStatusMessage("");
     }
   };
 
-  // Step 2: After nanopayment confirms on-chain, record the vote in the database
+  // Step 3: After on-chain confirmation, record the vote in the database
   useEffect(() => {
     if (isVoteTxConfirmed && voteTxHash && pendingVote && isVoting) {
       const finalizeVote = async () => {
         try {
-          setVoteStatusMessage("Payment confirmed! Recording vote on-chain...");
+          setVoteStatusMessage("Payment settled! Recording vote...");
           await submitVote(dispute.id, pendingVote.vote, pendingVote.justification, address);
           
           setConfirmedVoteTxHash(voteTxHash);
@@ -141,7 +214,7 @@ export default function DisputeDetail() {
           setPendingVote(null);
           setIsVoting(false);
           setVoteStatusMessage("");
-          setTimeout(() => setSuccess(false), 8000);
+          setTimeout(() => setSuccess(false), 10000);
         } catch (e) {
           setError(e.message || "Failed to record vote.");
           setIsVoting(false);
@@ -153,10 +226,10 @@ export default function DisputeDetail() {
     }
   }, [isVoteTxConfirmed, voteTxHash, pendingVote, isVoting]);
 
-  // Handle nanopayment confirmation errors
+  // Handle on-chain confirmation errors
   useEffect(() => {
     if (voteConfirmError && isVoting) {
-      setError(voteConfirmError.message || "Nanopayment confirmation failed.");
+      setError(voteConfirmError.shortMessage || voteConfirmError.message || "Authorization settlement failed.");
       setIsVoting(false);
       setVoteStatusMessage("");
       setPendingVote(null);
@@ -501,12 +574,17 @@ export default function DisputeDetail() {
               ) : (
                 // Active Voting Workspace for Reviewers
                 <div className="space-y-6 font-body">
-                  <div className="bg-white/[0.02] border border-white/[0.07] p-3 rounded-lg flex items-center gap-2 text-xs">
-                    <Coins className="h-4 w-4 text-[#4F6EF7]" />
-                    <span className="text-[#94a3b8]">Nanopayment: <strong className="text-white">$0.01 USDC</strong> per vote (on-chain)</span>
+                  <div className="bg-white/[0.02] border border-white/[0.07] p-3 rounded-lg space-y-1.5">
+                    <div className="flex items-center gap-2 text-xs">
+                      <PenTool className="h-4 w-4 text-[#4F6EF7]" />
+                      <span className="text-[#94a3b8]">EIP-3009 Nanopayment: <strong className="text-white">$0.01 USDC</strong> per vote</span>
+                    </div>
+                    <p className="text-[9px] text-[#94a3b8]/70 leading-relaxed pl-6">
+                      Step 1: Gasless off-chain signature (no gas fee) → Step 2: On-chain settlement via <code className="text-[#4F6EF7]/80">transferWithAuthorization</code>
+                    </p>
                   </div>
 
-                  {/* Nanopayment in progress overlay */}
+                  {/* EIP-3009 flow in progress */}
                   {isVoting && (
                     <div className="bg-[#4F6EF7]/5 border border-[#4F6EF7]/20 rounded-lg p-4 space-y-3">
                       <div className="flex items-center gap-2">
@@ -520,7 +598,7 @@ export default function DisputeDetail() {
                           rel="noopener noreferrer"
                           className="text-[10px] font-mono text-[#4F6EF7] hover:underline flex items-center gap-1 break-all"
                         >
-                          Tx: {voteTxHash}
+                          Settlement Tx: {voteTxHash}
                           <ExternalLink className="h-3 w-3 shrink-0" />
                         </a>
                       )}
@@ -579,7 +657,7 @@ export default function DisputeDetail() {
                     {success && (
                       <div className="bg-[#00D48B]/10 border border-[#00D48B]/20 p-3 rounded-lg space-y-2">
                         <div className="text-[#00D48B] text-[11px] font-semibold">
-                          ✅ Vote registered with verified nanopayment!
+                          ✅ Vote registered via EIP-3009 transferWithAuthorization!
                         </div>
                         {confirmedVoteTxHash && (
                           <a
@@ -588,7 +666,7 @@ export default function DisputeDetail() {
                             rel="noopener noreferrer"
                             className="text-[10px] font-mono text-[#4F6EF7] hover:underline flex items-center gap-1 break-all"
                           >
-                            Nanopayment Tx: {confirmedVoteTxHash}
+                            Settlement Tx: {confirmedVoteTxHash}
                             <ExternalLink className="h-3 w-3 shrink-0" />
                           </a>
                         )}
@@ -598,8 +676,8 @@ export default function DisputeDetail() {
                     <CountdownButton
                       onComplete={handleVoteSubmit}
                       disabled={!voteSelection || justification.trim().length < 10 || isVoting}
-                      label={voteSelection === "approve" ? "Hold to Cast Approve Vote" : voteSelection === "reject" ? "Hold to Cast Reject Vote" : "Hold to Cast Vote"}
-                      activeLabel="Signing Nanopayment..."
+                      label={voteSelection === "approve" ? "Hold to Sign & Cast Approve" : voteSelection === "reject" ? "Hold to Sign & Cast Reject" : "Hold to Sign & Cast Vote"}
+                      activeLabel="Signing EIP-3009 Authorization..."
                       completedLabel="Vote Cast!"
                       colorClass={voteSelection === "approve" ? "bg-[#00D48B]" : voteSelection === "reject" ? "bg-[#F7476E]" : "bg-[#4F6EF7]"}
                     />
