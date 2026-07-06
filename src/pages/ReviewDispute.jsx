@@ -115,7 +115,7 @@ export default function ReviewDispute() {
     }
 
     // Step 2: Trigger transfer from rewards pool
-    const rewardsPool = import.meta.env.VITE_REWARDS_POOL_ADDRESS;
+    const rewardsPool = import.meta.env.VITE_REWARDS_POOL_ADDRESS || "0x89d22efdc476f57134371c80e1a686db156291c7";
     if (rewardsPool && address) {
       setPaymentStatus("sending");
       setStatusMessage("Step 2/2: Sending reviewer reward from pool wallet...");
