@@ -100,9 +100,10 @@ Verdict operates on the **Arc Testnet** network:
    ```
 
 3. **Configure Environment Variables**:
-   Create a `.env` file in the root directory and add your Gemini API key:
+   Create a `.env` file in the root directory and add your keys:
    ```env
    VITE_GEMINI_API_KEY=your_gemini_api_key_here
+   VITE_REWARDS_POOL_ADDRESS=your_rewards_pool_address_here
    ```
 
 4. **Run the local development server**:
@@ -115,6 +116,20 @@ Verdict operates on the **Arc Testnet** network:
    ```bash
    npm run build
    ```
+
+---
+
+## 🏛️ Rewards Pool Wallet (Demo Simplification)
+
+In this hackathon build, human reviewers are compensated directly with exactly **2.00 USDC** upon submitting their verdict and justification.
+
+> [!NOTE]
+> **Production vs. Demo Architecture**:
+> In a production protocol, reviewer rewards are funded dynamically via smart contracts by taking a percentage of the losing party's stake or using protocol fee reserves.
+> For the simplicity of this demo, payouts are funded from a pre-funded rewards pool wallet (`VITE_REWARDS_POOL_ADDRESS`). 
+> Reviewers trigger an on-chain `transferFrom` call on the USDC token contract to pull their 2.00 USDC reward to their connected address.
+> 
+> **Important**: To allow reviewer payouts to succeed, the owner of the rewards pool wallet must approve the USDC contract (or a public router) to allow spender allowances, or fund the pool. If the on-chain payout fails (e.g. lack of allowance), the application catches the error and saves the review verdict successfully to the database with a **Payment Pending** warning rather than letting it block the review submission.
 
 ---
 
@@ -132,4 +147,6 @@ Verdict operates on the **Arc Testnet** network:
 3. Go to the **Become a Reviewer** tab and activate the reviewer role.
 4. Open the **Escalation Queue** tab, click **Claim for Review**, and inspect the case.
 5. Submit your verdict with detailed reasoning (minimum 50 characters).
-6. The dispute resolves, and you receive **2.00 USDC** in your earnings profile.
+6. The app triggers a database save and initiates the on-chain reward transaction of 2.00 USDC from the rewards pool.
+7. Inspect the transaction hash links directly on the success screen!
+

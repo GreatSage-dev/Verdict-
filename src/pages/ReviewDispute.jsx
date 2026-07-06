@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useAccount } from "wagmi";
+import { useAccount, useWriteContract } from "wagmi";
+import { parseUnits, getAddress } from "viem";
 import {
   ArrowLeft,
   Scale,
@@ -10,19 +11,37 @@ import {
   ExternalLink,
   ShieldAlert,
   MessageSquare,
-  Coins
+  Coins,
+  Loader
 } from "lucide-react";
 import {
   getDisputeById,
   submitHumanReview,
   truncateAddress,
-  isRegisteredReviewer
+  isRegisteredReviewer,
+  getArcExplorerUrl
 } from "../firebase/db";
 import WalletGate from "../components/WalletGate";
+
+const erc20Abi = [
+  {
+    name: "transferFrom",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "sender", type: "address" },
+      { name: "recipient", type: "address" },
+      { name: "amount", type: "uint256" }
+    ],
+    outputs: [{ name: "", type: "bool" }]
+  }
+];
 
 export default function ReviewDispute() {
   const { id } = useParams();
   const { address } = useAccount();
+
+  const { writeContractAsync } = useWriteContract();
 
   const [dispute, setDispute] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -34,6 +53,12 @@ export default function ReviewDispute() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
+
+  // Payout state
+  const [paymentStatus, setPaymentStatus] = useState("idle"); // 'idle' | 'sending' | 'success' | 'failed'
+  const [paymentTxHash, setPaymentTxHash] = useState("");
+  const [paymentError, setPaymentError] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -71,14 +96,56 @@ export default function ReviewDispute() {
     }
     setError("");
     setSubmitting(true);
+    setPaymentStatus("idle");
+    setPaymentError("");
+    setStatusMessage("Step 1/2: Submitting review to database...");
+
+    const disputeVerdict = verdict === "fulfilled" ? "agent_fulfilled" : "agent_failed";
+    let resultDispute = null;
+
     try {
-      const result = await submitHumanReview(id, verdict, reasoning.trim(), address);
-      setDispute(result);
-      setSubmitted(true);
+      // Step 1: Save review to database
+      resultDispute = await submitHumanReview(id, disputeVerdict, reasoning.trim(), address);
+      setDispute(resultDispute);
     } catch (e) {
-      setError(e.message || "Failed to submit review.");
+      setError(e.message || "Failed to submit review database record.");
+      setSubmitting(false);
+      setStatusMessage("");
+      return;
     }
+
+    // Step 2: Trigger transfer from rewards pool
+    const rewardsPool = import.meta.env.VITE_REWARDS_POOL_ADDRESS;
+    if (rewardsPool && address) {
+      setPaymentStatus("sending");
+      setStatusMessage("Step 2/2: Sending reviewer reward from pool wallet...");
+      try {
+        const txHash = await writeContractAsync({
+          address: getAddress("0x3600000000000000000000000000000000000000"),
+          abi: erc20Abi,
+          functionName: "transferFrom",
+          args: [
+            getAddress(rewardsPool),
+            getAddress(address),
+            parseUnits("2.00", 6)
+          ]
+        });
+        setPaymentTxHash(txHash);
+        setPaymentStatus("success");
+      } catch (err) {
+        console.error("USDC payout transaction failed", err);
+        const errMsg = err?.shortMessage || err?.message || "Payout transaction reverted. Verify rewards pool wallet has approved spender allowance.";
+        setPaymentError(errMsg);
+        setPaymentStatus("failed");
+      }
+    } else {
+      setPaymentError("Rewards pool address or connected address missing.");
+      setPaymentStatus("failed");
+    }
+
+    setSubmitted(true);
     setSubmitting(false);
+    setStatusMessage("");
   };
 
   // Loading
@@ -154,7 +221,7 @@ export default function ReviewDispute() {
               </p>
             </div>
 
-            <div className="bg-white/[0.02] border border-white/[0.07] rounded-lg p-5 max-w-md mx-auto space-y-3">
+            <div className="bg-white/[0.02] border border-white/[0.07] rounded-lg p-5 max-w-md mx-auto space-y-4">
               <div className="flex items-center justify-between text-xs font-body">
                 <span className="text-[#94a3b8]">Verdict</span>
                 <span className={`font-headline font-bold uppercase ${
@@ -165,14 +232,54 @@ export default function ReviewDispute() {
               </div>
               <div className="flex items-center justify-between text-xs font-body">
                 <span className="text-[#94a3b8]">Dispute</span>
-                <span className="text-white font-mono">{dispute.title?.slice(0, 40)}...</span>
+                <span className="text-white font-mono">{dispute.title?.slice(0, 35)}...</span>
               </div>
-              <div className="flex items-center justify-between text-xs font-body border-t border-white/[0.07] pt-3">
-                <span className="text-[#94a3b8] flex items-center gap-1">
-                  <Coins className="h-3.5 w-3.5 text-[#00D48B]" />
-                  Reward Earned
-                </span>
-                <span className="text-[#00D48B] font-mono font-bold">+2.00 USDC</span>
+              
+              <div className="border-t border-white/[0.07] pt-3 space-y-2">
+                <div className="flex items-center justify-between text-xs font-body">
+                  <span className="text-[#94a3b8] flex items-center gap-1">
+                    <Coins className="h-3.5 w-3.5 text-[#00D48B]" />
+                    Reviewer Reward
+                  </span>
+                  <span className="text-[#00D48B] font-mono font-bold">2.00 USDC</span>
+                </div>
+
+                {paymentStatus === "sending" && (
+                  <div className="flex items-center justify-center gap-2 py-1 text-[11px] font-body text-[#94a3b8]">
+                    <Loader className="h-3.5 w-3.5 animate-spin text-[#4F6EF7]" />
+                    <span>Processing reward transfer...</span>
+                  </div>
+                )}
+
+                {paymentStatus === "success" && (
+                  <div className="flex flex-col items-end gap-1 pt-1">
+                    <span className="text-[10px] text-[#00D48B] font-body">✓ Paid successfully</span>
+                    <div className="flex items-center gap-1 text-[10px] font-mono text-[#94a3b8]">
+                      <span>Tx: {truncateAddress(paymentTxHash)}</span>
+                      <a
+                        href={getArcExplorerUrl(paymentTxHash)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#4F6EF7] hover:underline flex items-center gap-0.5"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                {paymentStatus === "failed" && (
+                  <div className="text-left bg-[#F5A623]/10 border border-[#F5A623]/20 rounded-lg p-2.5 space-y-1 mt-2">
+                    <div className="flex items-center gap-1.5 text-[11px] font-headline font-bold text-[#F5A623] uppercase tracking-wider">
+                      <ShieldAlert className="h-3.5 w-3.5" />
+                      <span>Payment Pending</span>
+                    </div>
+                    <p className="text-[10px] text-[#94a3b8] leading-relaxed font-body">
+                      The database record is saved, but the rewards pool contract call returned an error:
+                      <span className="block mt-1 font-mono text-[9px] text-white/80">{paymentError}</span>
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -455,8 +562,8 @@ export default function ReviewDispute() {
           >
             {submitting ? (
               <>
-                <Scale className="h-4 w-4 animate-spin" />
-                Submitting Review...
+                <Scale className="h-4 w-4 animate-spin text-white" />
+                <span>{statusMessage || "Submitting Review..."}</span>
               </>
             ) : (
               <>
