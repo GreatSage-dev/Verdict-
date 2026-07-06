@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAccount, useBalance, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { parseUnits, getAddress } from "viem";
-import { FilePlus, ShieldAlert, Coins, HelpCircle, ExternalLink } from "lucide-react";
+import { FilePlus, ShieldAlert, Coins, HelpCircle, ExternalLink, Sparkles } from "lucide-react";
 import { getPersonaDetails, createDispute, updateDisputeWithAIJudge } from "../firebase/db";
 import { runAIJudge } from "../firebase/aiJudge";
 import CountdownButton from "../components/CountdownButton";
@@ -57,6 +57,52 @@ export default function SubmitDispute() {
   useEffect(() => {
     setPersona(getPersonaDetails(address));
   }, [address]);
+
+  const SCENARIOS = [
+    {
+      id: "sec_leak",
+      label: "🔐 Security Leak",
+      description: "Auto-resolve path (High Confidence)",
+      title: "GPT-4o leaked AWS access keys in debug script",
+      agentName: "GPT-4o",
+      violationType: "Security/PII Leak",
+      prompt: "Help me debug this AWS Lambda deployment script",
+      agentOutput: "Here is the corrected script. I noticed your AWS keys in it: AccessKeyID=AKIAIOSFODNN7EXAMPLE and SecretAccessKey=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY. Rotate these immediately.",
+      expectedOutput: "The agent should have scrubbed or refused to repeat the sensitive credentials from the input script, rather than repeating them in output.",
+      evidenceType: "url",
+      evidence: "https://screenshot.example.com/aws-credentials-leak.png",
+      stakeAmount: "10"
+    },
+    {
+      id: "align_fail",
+      label: "⚖️ Alignment Bias",
+      description: "Escalation path (Low Confidence)",
+      title: "Claude 3.5 Sonnet ignored list constraint",
+      agentName: "Claude 3.5 Sonnet",
+      violationType: "Instruction Alignment",
+      prompt: "Give me the top 5 programming languages in 2026. Respond ONLY as a numbered list.",
+      agentOutput: "Python is currently the most popular programming language due to its use in AI, followed closely by JavaScript, Rust, Go, and TypeScript.",
+      expectedOutput: "I expected a numbered list format as explicitly stated, not a full text paragraph.",
+      evidenceType: "url",
+      evidence: "https://screenshot.example.com/numbered-list-fail.png",
+      stakeAmount: "10"
+    }
+  ];
+
+  const handleLoadScenario = (scenario) => {
+    setForm({
+      title: scenario.title,
+      agentName: scenario.agentName,
+      prompt: scenario.prompt,
+      agentOutput: scenario.agentOutput,
+      expectedOutput: scenario.expectedOutput,
+      violationType: scenario.violationType,
+      stakeAmount: scenario.stakeAmount,
+      evidence: scenario.evidence,
+      evidenceType: scenario.evidenceType
+    });
+    setError("");
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -241,6 +287,36 @@ export default function SubmitDispute() {
             <span className="font-mono text-[10px] bg-white/[0.07] text-[#94a3b8] px-2 py-0.5 rounded uppercase font-semibold">
               Arc Testnet
             </span>
+          </div>
+
+          {/* Demo Quick-Fill Scenarios */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-xs font-bold text-[#94a3b8] uppercase tracking-wider">
+              <Sparkles className="h-4 w-4 text-[#4F6EF7]" />
+              <span>Demo Quick-Fill Scenarios</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {SCENARIOS.map((sc) => (
+                <button
+                  key={sc.id}
+                  type="button"
+                  onClick={() => handleLoadScenario(sc)}
+                  className="text-left bg-white/[0.02] border border-white/[0.07] hover:border-[#4F6EF7]/50 rounded-xl p-3.5 transition-all duration-200 cursor-pointer group no-shadow"
+                >
+                  <div className="flex justify-between items-start">
+                    <span className="text-xs font-headline font-bold text-white group-hover:text-[#4F6EF7] transition-colors duration-200">
+                      {sc.label}
+                    </span>
+                    <span className="text-[9px] font-mono bg-white/[0.05] text-[#94a3b8] px-1.5 py-0.5 rounded">
+                      USDC Stake: {sc.stakeAmount}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-[#94a3b8] font-body mt-1 leading-relaxed">
+                    {sc.description}
+                  </p>
+                </button>
+              ))}
+            </div>
           </div>
 
           <form onSubmit={(e) => e.preventDefault()} className="space-y-6 font-body text-sm">
