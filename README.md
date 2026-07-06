@@ -1,86 +1,90 @@
-# ⚖️ Verdict: AI Dispute Escrow Protocol
+# ⚖️ Verdict: AI Dispute Escrow & Resolution Protocol
 
 [![Built for Arc Network](https://img.shields.io/badge/Network-Arc--Testnet-blueviolet)](https://testnet.arcscan.app)
+[![Powered by Gemini](https://img.shields.io/badge/AI--Judge-Gemini--2.0--Flash-blue)](https://ai.google.dev)
 [![Powered by Circle](https://img.shields.io/badge/Payments-Circle--USDC-green)](https://circle.com)
 [![Web3 Integration](https://img.shields.io/badge/Web3-RainbowKit%20%2B%20Wagmi-blue)](https://rainbowkit.com)
 
-**Verdict** is a decentralized dispute resolution and escrow-slashing protocol built for the emerging **Agentic AI economy**. By combining programmable stablecoin escrows (Circle USDC) with consensus-driven expert review boards on the **Arc L1 Blockchain Network**, Verdict provides the trust infrastructure required for autonomous AI agents to transact safely.
+**Verdict** is a decentralized dispute resolution and escrow-slashing protocol built for the emerging **Agentic AI economy**. By combining programmable stablecoin escrows (Circle USDC) on the **Arc L1 Blockchain Network** with real-time AI and human evaluation, Verdict provides trust infrastructure for autonomous AI agents to transact safely.
 
 ---
 
 ## 💡 The Vision
 
-As autonomous AI agents make up an increasing share of the global economy, they will handle high-value transactions (hiring APIs, ordering physical goods, executing financial strategies) without human intervention. 
+In the Agentic AI economy, autonomous agents handle high-value transactions (calling paid APIs, executing financial actions, procuring services) without human intervention. 
 
 But what happens when an AI agent:
 1. **Hallucinates** and produces corrupted code or data?
-2. **Leaks sensitive credentials/API keys** in its outputs?
-3. **Violates rule agreements** of a service contract?
+2. **Leaks sensitive credentials or API keys** in its outputs?
+3. **Fails to align** with its prompt instructions?
 
-Traditional legal channels are too slow and expensive for micropayments, and basic multi-sigs don't scale. **Verdict** solves this by establishing **programmable escrow agreements**. When a dispute is filed, it triggers a consensus-based review by a decentralized jury of verified experts, instantly determining refund slashing or escrow settlement on-chain.
+Verdict establishes **programmable escrow agreements**. When a dispute is filed, it is first assessed by a single-pass AI Judge. If the AI Judge's confidence is low, the dispute is escalated to a queue of human reviewers. Reviewers audit the dispute, submit verdicts, and earn USDC rewards funded from the losing party's escrow.
+
+---
+
+## 📐 Protocol Architecture & Dispute Flow
+
+Verdict features a hybrid AI-human tier resolution system:
+
+```mermaid
+flowchart TD
+    A[Submitter] -->|Files Claim + Stakes USDC| B(USDC Escrow Contract)
+    B -->|Triggers Dispute Event| C[Gemini AI Judge]
+    C --> D{Confidence >= 85%?}
+    D -->|Yes| E[Auto-Resolved by AI Judge]
+    D -->|No| F[Status: 'Escalated to Human Review']
+    F --> G[Escalation Queue]
+    H[Opt-In Human Reviewer] -->|Claims Case| G
+    G --> I[Status: 'Claimed']
+    I --> J[Reviewer Submits Verdict + Reason]
+    J --> K[Dispute Resolved & Settle Escrow]
+    K -->|2.00 USDC Payout| H
+```
+
+### Dispute Progression States:
+- **Pending**: Dispute is submitted and the USDC stake transaction is processed.
+- **AI Judge Evaluation**: The system calls Google Gemini 2.0 Flash to evaluate the violation type, prompt, output, and evidence.
+  - **Auto-Resolve (Confidence $\ge$ 85%)**: If the violation is clear-cut (e.g., credential leaks), the AI Judge auto-resolves the dispute, immediately releasing or refunding the escrow.
+  - **Escalation (Confidence < 85%)**: If the dispute is ambiguous (e.g., subjective formatting alignment), the status changes to `escalated` and the case moves to the human queue.
+- **Human Review**: A registered reviewer claims the case, reviews the evidence, submits their verdict (Approve/Reject) with justifications, and receives a flat **2.00 USDC** reward.
 
 ---
 
 ## 🛠️ Key Features
 
-- **Real EVM Wallet Integration**: Natively connects with MetaMask, Rabby, Coinbase Wallet, and other EVM wallets via **RainbowKit** and **Wagmi**.
-- **Circle USDC Escrow Lockup**: Securely stakes USDC tokens when submitting a dispute to prevent spam and align incentives.
-- **Arc Testnet Deployment**: Integrated with the Arc Layer-1 blockchain network. Includes automated gas balance checks and network configuration prompts.
-- **Consensus Settlement Protocol**: Disputes require audits from 3 independent expert reviewers. Staked balances are auto-settled to consensus winners.
-- **Circle USDC Faucet**: Built-in testnet faucet allowing developers to mint mock USDC directly to their connected Web3 wallet.
-- **Live Transaction Logging**: Real-time display of on-chain operations and transactions linked to the active wallet.
-
----
-
-## 📐 Protocol Architecture & Incentives
-
-```mermaid
-graph TD
-    A[Submitter] -->|Files Claim + Stakes USDC| B(USDC Escrow Contract)
-    B -->|Triggers Dispute Event| C[Expert Review Panel]
-    C -->|Reviewer 1 Votes| D{Consensus Engine}
-    C -->|Reviewer 2 Votes| D
-    C -->|Reviewer 3 Votes| D
-    D -->|Consensus Reached| E[Escrow Settlement]
-    E -->|Refund slashed to Submitter| A
-    E -->|Or: Released to Developer| F[AI Service Provider]
-    D -->|Rewards distributed| C
-```
-
-### Slashing & Settlement Logic
-* **Dispute Submission**: A user creates a dispute with a detailed claim, logs, and a USDC stake.
-* **Review Assignment**: Verified expert reviewers inspect the claim. Each reviewer stakes **50 USDC** to submit their vote (Approve/Reject).
-* **Consensus Engine**:
-  * If **Consensus (majority) validates the dispute**: The escrow is slashed, refunding the submitter, and the majority voting reviewers recoup their stake plus a share of the protocol yield.
-  * If **Consensus rejects the dispute**: The submitter's stake is forfeited and distributed as rewards to the honest reviewers.
+- **Gemini 2.0 Flash AI Judge**: Powered by Google Gemini to analyze evidence details and outputs with structured JSON schemas and automated confidence scoring.
+- **No-Stake Reviewer Registration**: Any user can connect their Web3 wallet and opt in to become an active human reviewer (no token stake gate required).
+- **Restricted Escalation Queue**: Active human reviewers gain exclusive access to a real-time queue showing only disputes marked as `Escalated to Human Review`.
+- **EIP-3009 Nanopayments**: Interactive voting features utilize Circle's **EIP-3009** standard (`transferWithAuthorization`), enabling gasless off-chain signature authorization for sub-cent fee rails.
+- **On-Chain Escrows**: Submitting disputes requires a real USDC smart contract transfer on the **Arc Testnet** to secure escrow funds.
+- **Reviewer Earnings Dashboard**: Active reviewers can track their completed cases and withdraw their accumulated USDC rewards.
 
 ---
 
 ## 💻 Tech Stack
 
-- **Frontend Framework**: React (Vite)
-- **Styling**: Vanilla CSS + Tailwind CSS (Custom dark theme optimized for readability and premium feel)
+- **Frontend Framework**: React 18 (Vite)
+- **Styling**: Vanilla CSS (sleek dark mode UI with ambient glows)
 - **Web3 Bindings**: `@rainbow-me/rainbowkit` + `wagmi` + `viem` + `@tanstack/react-query`
-- **Database Coordination**: Firebase (For quick off-chain dispute registry & state synchronization)
+- **AI Engine**: Google Gemini API REST client (`gemini-2.0-flash`)
+- **Database Coordination**: LocalStorage (fallback) / Firebase
 
 ---
 
-## 🌐 Arc Testnet Network Details
+## 🌐 Arc Testnet Details
 
 Verdict operates on the **Arc Testnet** network:
 
 - **Network Name**: `Arc Testnet`
 - **Chain ID**: `5042002`
-- **New RPC URL**: `https://rpc.testnet.arc.network`
+- **RPC URL**: `https://rpc.testnet.arc.network`
 - **Currency Symbol**: `USDC` (Arc uses USDC as its native gas token)
-- **Block Explorer URL**: `https://testnet.arcscan.app`
+- **USDC Token Address**: `0x3600000000000000000000000000000000000000`
+- **Block Explorer**: `https://testnet.arcscan.app`
 
 ---
 
 ## 🚀 Getting Started
-
-### Prerequisites
-Make sure you have Node.js installed on your machine.
 
 ### Installation
 
@@ -96,14 +100,9 @@ Make sure you have Node.js installed on your machine.
    ```
 
 3. **Configure Environment Variables**:
-   Create a `.env` file in the root directory and add your Firebase configuration (if deploying your own DB):
+   Create a `.env` file in the root directory and add your Gemini API key:
    ```env
-   VITE_FIREBASE_API_KEY=your_api_key
-   VITE_FIREBASE_AUTH_DOMAIN=your_auth_domain
-   VITE_FIREBASE_PROJECT_ID=your_project_id
-   VITE_FIREBASE_STORAGE_BUCKET=your_storage_bucket
-   VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
-   VITE_FIREBASE_APP_ID=your_app_id
+   VITE_GEMINI_API_KEY=your_gemini_api_key_here
    ```
 
 4. **Run the local development server**:
@@ -119,8 +118,18 @@ Make sure you have Node.js installed on your machine.
 
 ---
 
-## 👥 Simulating Expert Reviewers (Jury Mode)
-To simulate the 3-reviewer consensus flow, connect the following pre-seeded reviewer addresses in your browser wallet extension:
-* **Alice (Reviewer 1)**: `0x70997970C51812dc3A010C7d01b50e0d17dc79C8`
-* **Bob (Reviewer 2)**: `0x3C44Cd3B6aE102c17613657d90739d7edd11f30e`
-* **Charlie (Reviewer 3)**: `0x90F79bf6EB2c4f870365E785982E1f101E93b906`
+## 🧪 Testing the Flows
+
+### Path 1: Auto-Resolution (High Confidence)
+1. Submit a dispute alleging **Security/PII Leak** (e.g., exposing an AWS Access Key in logs).
+2. Attach a valid proof link or screenshot.
+3. Sign the USDC stake transaction.
+4. The AI Judge runs. Due to the high-severity category, confidence will score $\ge 85\%$, and the dispute will **auto-resolve** directly.
+
+### Path 2: Human Escalation & Review (Low Confidence)
+1. Submit a dispute alleging **Instruction Alignment** with weak or subjective evidence.
+2. The AI Judge will score it with low confidence ($< 85\%$) and change the status to `escalated`.
+3. Go to the **Become a Reviewer** tab and activate the reviewer role.
+4. Open the **Escalation Queue** tab, click **Claim for Review**, and inspect the case.
+5. Submit your verdict with detailed reasoning (minimum 50 characters).
+6. The dispute resolves, and you receive **2.00 USDC** in your earnings profile.
