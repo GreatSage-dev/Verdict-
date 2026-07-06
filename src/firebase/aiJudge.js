@@ -92,42 +92,53 @@ const buildUserMessage = (dispute) => {
 
 /**
  * Call Google Gemini 2.0 Flash via the REST API.
+ * Retries up to 3 times on 429 rate-limit errors with exponential backoff.
  */
-const callGemini = async (userMessage) => {
+const callGemini = async (userMessage, retries = 3) => {
   const apiKey = getGeminiKey();
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
+  const requestBody = JSON.stringify({
+    system_instruction: {
+      parts: [{ text: SYSTEM_PROMPT }],
     },
-    body: JSON.stringify({
-      system_instruction: {
-        parts: [{ text: SYSTEM_PROMPT }],
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: userMessage }],
       },
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: userMessage }],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 512,
-        responseMimeType: 'application/json',
-      },
-    }),
+    ],
+    generationConfig: {
+      temperature: 0.3,
+      maxOutputTokens: 512,
+      responseMimeType: 'application/json',
+    },
   });
 
-  if (!response.ok) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: requestBody,
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      return text;
+    }
+
+    // Retry on rate limit (429)
+    if (response.status === 429 && attempt < retries) {
+      const delay = 6000 * Math.pow(2, attempt); // 6s, 12s, 24s
+      console.warn(`AI Judge: Rate limited (429). Retrying in ${delay / 1000}s... (attempt ${attempt + 1}/${retries})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      continue;
+    }
+
     const errBody = await response.text();
     throw new Error(`Gemini API error ${response.status}: ${errBody}`);
   }
-
-  const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  return text;
 };
 
 // ── Response Parser ─────────────────────────────────────────────────────────
