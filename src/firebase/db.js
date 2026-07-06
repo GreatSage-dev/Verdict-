@@ -178,9 +178,25 @@ export const initializeMockDB = (force = false) => {
   }
 };
 
+// Sync Firestore collections to localStorage cache for synchronous checks
+export const syncFirestoreCache = async () => {
+  if (!isFirebaseConfigured) return;
+  try {
+    const snap = await getDocs(collection(db, "reviewers"));
+    const reviewers = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    localStorage.setItem("verdict_registered_reviewers", JSON.stringify(reviewers));
+    window.dispatchEvent(new Event("verdictDbUpdated"));
+  } catch (e) {
+    console.error("Failed to sync Firestore reviewers cache:", e);
+  }
+};
+
 // Auto run on load if not using Firebase
 if (!isFirebaseConfigured) {
   initializeMockDB();
+} else {
+  // Trigger initial cache sync
+  syncFirestoreCache();
 }
 
 // Helper: Get Mock Data
@@ -612,6 +628,22 @@ export const getEscalatedDisputes = async () => {
 };
 
 export const claimDispute = async (disputeId, reviewerAddress) => {
+  if (isFirebaseConfigured) {
+    try {
+      const docRef = doc(db, "disputes", disputeId);
+      await updateDoc(docRef, {
+        status: "claimed",
+        claimedBy: reviewerAddress,
+        claimedAt: new Date().toISOString()
+      });
+      const snap = await getDoc(docRef);
+      window.dispatchEvent(new Event("verdictDbUpdated"));
+      return { id: snap.id, ...snap.data() };
+    } catch (e) {
+      console.error("Firestore claimDispute failed, falling back", e);
+    }
+  }
+
   const disputes = getMockItem("verdict_disputes") || [];
   const index = disputes.findIndex(d => d.id === disputeId);
   if (index === -1) throw new Error("Dispute not found.");
@@ -633,6 +665,57 @@ export const submitHumanReview = async (disputeId, verdict, reasoning, reviewerA
   }
   if (!['agent_fulfilled', 'agent_failed'].includes(verdict)) {
     throw new Error("Verdict must be 'agent_fulfilled' or 'agent_failed'.");
+  }
+
+  if (isFirebaseConfigured) {
+    try {
+      const docRef = doc(db, "disputes", disputeId);
+      const updateData = {
+        status: "resolved",
+        humanVerdict: verdict,
+        humanReasoning: reasoning,
+        humanReviewerAddress: reviewerAddress,
+        humanReviewedAt: new Date().toISOString(),
+        reviewerReward: REVIEWER_REWARD_USDC,
+        resolvedAt: new Date().toISOString(),
+        consensus: verdict === "agent_failed" ? "reject" : "approve"
+      };
+      await updateDoc(docRef, updateData);
+
+      // Pay the reviewer in Firestore
+      const q = query(collection(db, "reviewers"), where("address", "==", reviewerAddress.toLowerCase()));
+      const snapReviewers = await getDocs(q);
+      if (!snapReviewers.empty) {
+        const revDoc = snapReviewers.docs[0];
+        const revData = revDoc.data();
+        await updateDoc(doc(db, "reviewers", revDoc.id), {
+          votesCount: (revData.votesCount || 0) + 1,
+          earnings: (revData.earnings || 0) + REVIEWER_REWARD_USDC
+        });
+      }
+
+      // Add transaction in Firestore
+      const txHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join("");
+      await addDoc(collection(db, "transactions"), {
+        type: "reward",
+        amount: REVIEWER_REWARD_USDC,
+        currency: "USDC",
+        fromAddress: "0xVerdictEscrowContract",
+        toAddress: reviewerAddress,
+        timestamp: new Date().toISOString(),
+        hash: txHash,
+        disputeId: disputeId
+      });
+
+      // Sync the local cache in the background
+      syncFirestoreCache();
+
+      const snap = await getDoc(docRef);
+      window.dispatchEvent(new Event("verdictDbUpdated"));
+      return { id: snap.id, ...snap.data() };
+    } catch (e) {
+      console.error("Firestore submitHumanReview failed, falling back", e);
+    }
   }
 
   const disputes = getMockItem("verdict_disputes");
@@ -690,6 +773,40 @@ export const submitHumanReview = async (disputeId, verdict, reasoning, reviewerA
 export const registerReviewer = async (address) => {
   if (!address) throw new Error("Wallet address required.");
   const addrLower = address.toLowerCase();
+
+  if (isFirebaseConfigured) {
+    try {
+      const q = query(collection(db, "reviewers"), where("address", "==", addrLower));
+      const snap = await getDocs(q);
+      
+      let reviewerData;
+      if (!snap.empty) {
+        reviewerData = { id: snap.docs[0].id, ...snap.docs[0].data() };
+      } else {
+        const newReviewer = {
+          address: addrLower,
+          name: `Reviewer ${truncateAddress(address)}`,
+          avatar: "⚖️",
+          specialty: "General Review",
+          earnings: 0,
+          votesCount: 0,
+          registeredAt: new Date().toISOString(),
+          status: "active"
+        };
+        const docRef = await addDoc(collection(db, "reviewers"), newReviewer);
+        reviewerData = { id: docRef.id, ...newReviewer };
+      }
+      
+      // Sync cache
+      await syncFirestoreCache();
+      
+      window.dispatchEvent(new Event("verdictDbUpdated"));
+      return reviewerData;
+    } catch (e) {
+      console.error("Firestore registerReviewer failed, falling back", e);
+    }
+  }
+
   const registered = getMockItem("verdict_registered_reviewers") || [];
   if (registered.find(r => r.address.toLowerCase() === addrLower)) {
     return registered.find(r => r.address.toLowerCase() === addrLower);
@@ -729,6 +846,32 @@ export const getRegisteredReviewer = (address) => {
 // AI JUDGE RESULT STORAGE
 // ==========================================
 export const updateDisputeWithAIJudge = async (disputeId, aiResult) => {
+  if (isFirebaseConfigured) {
+    try {
+      const docRef = doc(db, "disputes", disputeId);
+      const status = aiResult.shouldEscalate ? "escalated" : "resolved";
+      const resolvedAt = aiResult.shouldEscalate ? null : new Date().toISOString();
+      const consensus = aiResult.shouldEscalate ? null : (aiResult.verdict === "agent_failed" ? "reject" : "approve");
+
+      const updateData = {
+        aiJudgeVerdict: aiResult.verdict,
+        aiJudgeConfidence: aiResult.confidence,
+        aiJudgeReasoning: aiResult.reasoning,
+        aiJudgeTimestamp: new Date().toISOString(),
+        status,
+        resolvedAt,
+        consensus
+      };
+
+      await updateDoc(docRef, updateData);
+      const snap = await getDoc(docRef);
+      window.dispatchEvent(new Event("verdictDbUpdated"));
+      return { id: snap.id, ...snap.data() };
+    } catch (e) {
+      console.error("Firestore updateDisputeWithAIJudge failed, falling back", e);
+    }
+  }
+
   const disputes = getMockItem("verdict_disputes");
   const index = disputes.findIndex(d => d.id === disputeId);
   if (index === -1) return;
