@@ -26,22 +26,31 @@ export default function Navbar() {
   const { address, isConnected } = useAccount();
   const { data: balanceData } = useBalance({ address });
   const [escalatedCount, setEscalatedCount] = useState(0);
+  const [isReviewer, setIsReviewer] = useState(() => isConnected && address && isRegisteredReviewer(address));
 
-  const isReviewer = isConnected && address && isRegisteredReviewer(address);
+  // Sync reviewer status state
+  useEffect(() => {
+    setIsReviewer(isConnected && address && isRegisteredReviewer(address));
+  }, [address, isConnected]);
 
   // Load escalated dispute count for badge
   useEffect(() => {
     const loadCount = async () => {
-      if (isReviewer) {
+      const activeReviewer = isConnected && address && isRegisteredReviewer(address);
+      setIsReviewer(activeReviewer);
+      
+      if (activeReviewer) {
         const disputes = await getEscalatedDisputes();
-        setEscalatedCount(disputes.filter(d => d.status === "escalated").length);
+        setEscalatedCount(disputes.filter(d => d.status === "escalated" || d.status === "claimed").length);
+      } else {
+        setEscalatedCount(0);
       }
     };
     loadCount();
     const handleUpdate = () => loadCount();
     window.addEventListener("verdictDbUpdated", handleUpdate);
     return () => window.removeEventListener("verdictDbUpdated", handleUpdate);
-  }, [isReviewer, address]);
+  }, [address, isConnected]);
 
   const navItems = [
     { name: "Home", path: "/", icon: Home },
