@@ -260,7 +260,16 @@ export const getDisputes = async () => {
       const snap = await get(ref(db, "disputes"));
       if (snap.exists()) {
         const data = snap.val();
-        return Object.keys(data).map(key => ({ id: key, ...data[key] }));
+        return Object.keys(data).map(key => {
+          const disp = data[key];
+          return {
+            id: key,
+            ...disp,
+            voters: disp.voters || [],
+            votes: disp.votes || {},
+            justifications: disp.justifications || {}
+          };
+        });
       }
       return [];
     } catch (e) {
@@ -274,7 +283,16 @@ export const getDisputeById = async (id) => {
   if (isFirebaseConfigured) {
     try {
       const snap = await get(ref(db, `disputes/${id}`));
-      if (snap.exists()) return { id, ...snap.val() };
+      if (snap.exists()) {
+        const disp = snap.val();
+        return {
+          id,
+          ...disp,
+          voters: disp.voters || [],
+          votes: disp.votes || {},
+          justifications: disp.justifications || {}
+        };
+      }
     } catch (e) {
       console.error("RTD getDisputeById failed, falling back", e);
     }
@@ -647,7 +665,16 @@ export const getEscalatedDisputes = async () => {
       const snap = await get(ref(db, "disputes"));
       if (snap.exists()) {
         const data = snap.val();
-        const list = Object.keys(data).map(key => ({ id: key, ...data[key] }));
+        const list = Object.keys(data).map(key => {
+          const disp = data[key];
+          return {
+            id: key,
+            ...disp,
+            voters: disp.voters || [],
+            votes: disp.votes || {},
+            justifications: disp.justifications || {}
+          };
+        });
         return list.filter(d => d.status === "escalated" || d.status === "claimed");
       }
       return [];
