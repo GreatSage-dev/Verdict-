@@ -1,15 +1,12 @@
 import { db, isFirebaseConfigured } from "./config";
 import { 
-  collection, 
-  doc, 
-  getDocs, 
-  getDoc, 
-  setDoc, 
-  updateDoc, 
-  addDoc, 
-  query, 
-  where 
-} from "firebase/firestore";
+  ref, 
+  set, 
+  get, 
+  update, 
+  push,
+  child
+} from "firebase/database";
 
 // Configurable consensus threshold — raise to 3 when more real reviewers are onboarded
 export const REQUIRED_VOTES_FOR_CONSENSUS = 1;
@@ -178,16 +175,18 @@ export const initializeMockDB = (force = false) => {
   }
 };
 
-// Sync Firestore collections to localStorage cache for synchronous checks
+// Sync Realtime Database collections to localStorage cache for synchronous checks
 export const syncFirestoreCache = async () => {
   if (!isFirebaseConfigured) return;
   try {
-    const snap = await getDocs(collection(db, "reviewers"));
-    const reviewers = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const snap = await get(ref(db, "reviewers"));
+    const reviewers = snap.exists() 
+      ? Object.keys(snap.val()).map(key => ({ id: key, ...snap.val()[key] }))
+      : [];
     localStorage.setItem("verdict_registered_reviewers", JSON.stringify(reviewers));
     window.dispatchEvent(new Event("verdictDbUpdated"));
   } catch (e) {
-    console.error("Failed to sync Firestore reviewers cache:", e);
+    console.error("Failed to sync Realtime Database reviewers cache:", e);
   }
 };
 
@@ -258,10 +257,14 @@ export const getPersonaDetails = (address) => {
 export const getDisputes = async () => {
   if (isFirebaseConfigured) {
     try {
-      const snap = await getDocs(collection(db, "disputes"));
-      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const snap = await get(ref(db, "disputes"));
+      if (snap.exists()) {
+        const data = snap.val();
+        return Object.keys(data).map(key => ({ id: key, ...data[key] }));
+      }
+      return [];
     } catch (e) {
-      console.error("Firestore getDisputes failed, falling back", e);
+      console.error("RTD getDisputes failed, falling back", e);
     }
   }
   return getMockItem("verdict_disputes");
@@ -270,11 +273,10 @@ export const getDisputes = async () => {
 export const getDisputeById = async (id) => {
   if (isFirebaseConfigured) {
     try {
-      const docRef = doc(db, "disputes", id);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) return { id: snap.id, ...snap.data() };
+      const snap = await get(ref(db, `disputes/${id}`));
+      if (snap.exists()) return { id, ...snap.val() };
     } catch (e) {
-      console.error("Firestore getDisputeById failed, falling back", e);
+      console.error("RTD getDisputeById failed, falling back", e);
     }
   }
   const disputes = getMockItem("verdict_disputes");
@@ -304,21 +306,28 @@ export const createDispute = async (title, prompt, agentOutput, expectedOutput, 
 
   if (isFirebaseConfigured) {
     try {
-      const docRef = await addDoc(collection(db, "disputes"), newDispute);
-      // Create transaction in Firestore too
-      await addDoc(collection(db, "transactions"), {
+      const disputesRef = ref(db, "disputes");
+      const newDisputeRef = push(disputesRef);
+      const disputeId = newDisputeRef.key;
+      
+      await set(newDisputeRef, newDispute);
+      
+      // Create transaction in RTD too
+      const txRef = push(ref(db, "transactions"));
+      await set(txRef, {
         type: "stake",
         amount: parseFloat(stakeAmount),
         currency: "USDC",
         fromAddress: userAddress,
         toAddress: "0xVerdictEscrowContract",
         timestamp: new Date().toISOString(),
-        disputeId: docRef.id,
+        disputeId: disputeId,
         hash: txHash
       });
-      return { id: docRef.id, ...newDispute };
+      
+      return { id: disputeId, ...newDispute };
     } catch (e) {
-      console.error("Firestore createDispute failed, falling back", e);
+      console.error("RTD createDispute failed, falling back", e);
     }
   }
 
@@ -364,13 +373,17 @@ export const submitVote = async (disputeId, vote, justification, reviewerAddress
 
   if (isFirebaseConfigured) {
     try {
-      const docRef = doc(db, "disputes", disputeId);
-      const snap = await getDoc(docRef);
+      const disputeRef = ref(db, `disputes/${disputeId}`);
+      const snap = await get(disputeRef);
       if (snap.exists()) {
-        const data = snap.data();
-        const updatedVoters = [...new Set([...data.voters, reviewerId])];
-        const updatedVotes = { ...data.votes, [reviewerId]: vote };
-        const updatedJustifications = { ...data.justifications, [reviewerId]: justification };
+        const data = snap.val();
+        const voters = data.voters || [];
+        const votes = data.votes || {};
+        const justifications = data.justifications || {};
+
+        const updatedVoters = [...new Set([...voters, reviewerId])];
+        const updatedVotes = { ...votes, [reviewerId]: vote };
+        const updatedJustifications = { ...justifications, [reviewerId]: justification };
         
         let consensus = null;
         let status = "pending";
@@ -395,11 +408,11 @@ export const submitVote = async (disputeId, vote, justification, reviewerAddress
           resolvedAt
         };
 
-        await updateDoc(docRef, updateData);
+        await update(disputeRef, updateData);
         return { id: disputeId, ...data, ...updateData };
       }
     } catch (e) {
-      console.error("Firestore submitVote failed, falling back", e);
+      console.error("RTD submitVote failed, falling back", e);
     }
   }
 
@@ -540,16 +553,17 @@ export const submitVote = async (disputeId, vote, justification, reviewerAddress
   return dispute;
 };
 
-// ==========================================
-// TRANSACTIONS COLLECTIONS
-// ==========================================
 export const getTransactions = async () => {
   if (isFirebaseConfigured) {
     try {
-      const snap = await getDocs(collection(db, "transactions"));
-      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const snap = await get(ref(db, "transactions"));
+      if (snap.exists()) {
+        const data = snap.val();
+        return Object.keys(data).map(key => ({ id: key, ...data[key] }));
+      }
+      return [];
     } catch (e) {
-      console.error("Firestore getTransactions failed, falling back", e);
+      console.error("RTD getTransactions failed, falling back", e);
     }
   }
   return getMockItem("verdict_transactions");
@@ -563,7 +577,21 @@ export const depositUSDC = async (amount, userAddress) => {
   const txHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join("");
   
   if (isFirebaseConfigured) {
-    // Write transaction logic for firebase...
+    try {
+      const txRef = push(ref(db, "transactions"));
+      await set(txRef, {
+        type: "deposit",
+        amount: amountFloat,
+        currency: "USDC",
+        fromAddress: "0xCircleNanopaymentsEscrow",
+        toAddress: userAddress,
+        timestamp: new Date().toISOString(),
+        hash: txHash,
+        disputeId: null
+      });
+    } catch (e) {
+      console.error("RTD depositUSDC transaction log failed", e);
+    }
   }
 
   const persona = getPersonaDetails(userAddress);
@@ -616,11 +644,15 @@ export const depositUSDC = async (amount, userAddress) => {
 export const getEscalatedDisputes = async () => {
   if (isFirebaseConfigured) {
     try {
-      const q = query(collection(db, "disputes"), where("status", "in", ["escalated", "claimed"]));
-      const snap = await getDocs(q);
-      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const snap = await get(ref(db, "disputes"));
+      if (snap.exists()) {
+        const data = snap.val();
+        const list = Object.keys(data).map(key => ({ id: key, ...data[key] }));
+        return list.filter(d => d.status === "escalated" || d.status === "claimed");
+      }
+      return [];
     } catch (e) {
-      console.error("Firestore getEscalatedDisputes failed, falling back", e);
+      console.error("RTD getEscalatedDisputes failed, falling back", e);
     }
   }
   const disputes = getMockItem("verdict_disputes") || [];
@@ -630,17 +662,18 @@ export const getEscalatedDisputes = async () => {
 export const claimDispute = async (disputeId, reviewerAddress) => {
   if (isFirebaseConfigured) {
     try {
-      const docRef = doc(db, "disputes", disputeId);
-      await updateDoc(docRef, {
+      const disputeRef = ref(db, `disputes/${disputeId}`);
+      const updateData = {
         status: "claimed",
         claimedBy: reviewerAddress,
         claimedAt: new Date().toISOString()
-      });
-      const snap = await getDoc(docRef);
+      };
+      await update(disputeRef, updateData);
+      const snap = await get(disputeRef);
       window.dispatchEvent(new Event("verdictDbUpdated"));
-      return { id: snap.id, ...snap.data() };
+      return { id: disputeId, ...snap.val() };
     } catch (e) {
-      console.error("Firestore claimDispute failed, falling back", e);
+      console.error("RTD claimDispute failed, falling back", e);
     }
   }
 
@@ -669,7 +702,7 @@ export const submitHumanReview = async (disputeId, verdict, reasoning, reviewerA
 
   if (isFirebaseConfigured) {
     try {
-      const docRef = doc(db, "disputes", disputeId);
+      const disputeRef = ref(db, `disputes/${disputeId}`);
       const updateData = {
         status: "resolved",
         humanVerdict: verdict,
@@ -680,23 +713,30 @@ export const submitHumanReview = async (disputeId, verdict, reasoning, reviewerA
         resolvedAt: new Date().toISOString(),
         consensus: verdict === "agent_failed" ? "reject" : "approve"
       };
-      await updateDoc(docRef, updateData);
+      await update(disputeRef, updateData);
 
-      // Pay the reviewer in Firestore
-      const q = query(collection(db, "reviewers"), where("address", "==", reviewerAddress.toLowerCase()));
-      const snapReviewers = await getDocs(q);
-      if (!snapReviewers.empty) {
-        const revDoc = snapReviewers.docs[0];
-        const revData = revDoc.data();
-        await updateDoc(doc(db, "reviewers", revDoc.id), {
-          votesCount: (revData.votesCount || 0) + 1,
-          earnings: (revData.earnings || 0) + REVIEWER_REWARD_USDC
-        });
+      // Pay the reviewer in Realtime DB
+      const reviewersRef = ref(db, "reviewers");
+      const snapReviewers = await get(reviewersRef);
+      if (snapReviewers.exists()) {
+        const revs = snapReviewers.val();
+        const matchKey = Object.keys(revs).find(
+          key => revs[key].address?.toLowerCase() === reviewerAddress.toLowerCase()
+        );
+        if (matchKey) {
+          const revRef = ref(db, `reviewers/${matchKey}`);
+          const revData = revs[matchKey];
+          await update(revRef, {
+            votesCount: (revData.votesCount || 0) + 1,
+            earnings: (revData.earnings || 0) + REVIEWER_REWARD_USDC
+          });
+        }
       }
 
-      // Add transaction in Firestore
+      // Add transaction in Realtime DB
       const txHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join("");
-      await addDoc(collection(db, "transactions"), {
+      const txRef = push(ref(db, "transactions"));
+      await set(txRef, {
         type: "reward",
         amount: REVIEWER_REWARD_USDC,
         currency: "USDC",
@@ -710,11 +750,11 @@ export const submitHumanReview = async (disputeId, verdict, reasoning, reviewerA
       // Sync the local cache in the background
       syncFirestoreCache();
 
-      const snap = await getDoc(docRef);
+      const snap = await get(disputeRef);
       window.dispatchEvent(new Event("verdictDbUpdated"));
-      return { id: snap.id, ...snap.data() };
+      return { id: disputeId, ...snap.val() };
     } catch (e) {
-      console.error("Firestore submitHumanReview failed, falling back", e);
+      console.error("RTD submitHumanReview failed, falling back", e);
     }
   }
 
@@ -776,13 +816,23 @@ export const registerReviewer = async (address) => {
 
   if (isFirebaseConfigured) {
     try {
-      const q = query(collection(db, "reviewers"), where("address", "==", addrLower));
-      const snap = await getDocs(q);
+      const reviewersRef = ref(db, "reviewers");
+      const snap = await get(reviewersRef);
       
-      let reviewerData;
-      if (!snap.empty) {
-        reviewerData = { id: snap.docs[0].id, ...snap.docs[0].data() };
-      } else {
+      let matchKey = null;
+      let reviewerData = null;
+      
+      if (snap.exists()) {
+        const revs = snap.val();
+        matchKey = Object.keys(revs).find(
+          key => revs[key].address?.toLowerCase() === addrLower
+        );
+        if (matchKey) {
+          reviewerData = { id: matchKey, ...revs[matchKey] };
+        }
+      }
+      
+      if (!reviewerData) {
         const newReviewer = {
           address: addrLower,
           name: `Reviewer ${truncateAddress(address)}`,
@@ -793,8 +843,10 @@ export const registerReviewer = async (address) => {
           registeredAt: new Date().toISOString(),
           status: "active"
         };
-        const docRef = await addDoc(collection(db, "reviewers"), newReviewer);
-        reviewerData = { id: docRef.id, ...newReviewer };
+        const newRevRef = push(reviewersRef);
+        const newKey = newRevRef.key;
+        await set(newRevRef, newReviewer);
+        reviewerData = { id: newKey, ...newReviewer };
       }
       
       // Sync cache
@@ -803,7 +855,7 @@ export const registerReviewer = async (address) => {
       window.dispatchEvent(new Event("verdictDbUpdated"));
       return reviewerData;
     } catch (e) {
-      console.error("Firestore registerReviewer failed, falling back", e);
+      console.error("RTD registerReviewer failed, falling back", e);
     }
   }
 
@@ -848,7 +900,7 @@ export const getRegisteredReviewer = (address) => {
 export const updateDisputeWithAIJudge = async (disputeId, aiResult) => {
   if (isFirebaseConfigured) {
     try {
-      const docRef = doc(db, "disputes", disputeId);
+      const disputeRef = ref(db, `disputes/${disputeId}`);
       const status = aiResult.shouldEscalate ? "escalated" : "resolved";
       const resolvedAt = aiResult.shouldEscalate ? null : new Date().toISOString();
       const consensus = aiResult.shouldEscalate ? null : (aiResult.verdict === "agent_failed" ? "reject" : "approve");
@@ -863,12 +915,12 @@ export const updateDisputeWithAIJudge = async (disputeId, aiResult) => {
         consensus
       };
 
-      await updateDoc(docRef, updateData);
-      const snap = await getDoc(docRef);
+      await update(disputeRef, updateData);
+      const snap = await get(disputeRef);
       window.dispatchEvent(new Event("verdictDbUpdated"));
-      return { id: snap.id, ...snap.data() };
+      return { id: disputeId, ...snap.val() };
     } catch (e) {
-      console.error("Firestore updateDisputeWithAIJudge failed, falling back", e);
+      console.error("RTD updateDisputeWithAIJudge failed, falling back", e);
     }
   }
 
