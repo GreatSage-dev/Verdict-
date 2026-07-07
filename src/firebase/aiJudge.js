@@ -133,10 +133,10 @@ const callGemini = async (userMessage, retries = 3) => {
       return text;
     }
 
-    // Retry on rate limit (429)
-    if (response.status === 429 && attempt < retries) {
+    // Retry on rate limit (429) or service unavailable (503)
+    if ((response.status === 429 || response.status === 503) && attempt < retries) {
       const delay = 6000 * Math.pow(2, attempt); // 6s, 12s, 24s
-      console.warn(`AI Judge: Rate limited (429). Retrying in ${delay / 1000}s... (attempt ${attempt + 1}/${retries})`);
+      console.warn(`AI Judge: API error (${response.status}). Retrying in ${delay / 1000}s... (attempt ${attempt + 1}/${retries})`);
       await new Promise(resolve => setTimeout(resolve, delay));
       continue;
     }
