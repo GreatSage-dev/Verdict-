@@ -101,7 +101,7 @@ const buildUserMessage = (dispute) => {
  */
 const callGemini = async (userMessage, retries = 3) => {
   const apiKey = getGeminiKey();
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
 
   const requestBody = JSON.stringify({
     system_instruction: {
